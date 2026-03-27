@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}이체내역{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">이체 내역</h5>
+  <form class="d-flex gap-2" method="get">
+    <select name="status" class="form-select form-select-sm" style="width:130px;" onchange="this.form.submit()">
+      <option value="" {% if not status_filter %}selected{% endif %}>전체</option>
+      <option value="completed" {% if status_filter=='completed' %}selected{% endif %}>완료</option>
+      <option value="failed" {% if status_filter=='failed' %}selected{% endif %}>실패</option>
+      <option value="cancelled" {% if status_filter=='cancelled' %}selected{% endif %}>취소</option>
+    </select>
+  </form>
+</div>
+
+{% if rows %}
+<div class="table-responsive">
+  <table class="table table-bordered table-sm table-hover">
+    <thead class="table-light">
+      <tr>
+        <th>일시</th><th>출금 계좌</th><th>수신자</th><th>은행</th>
+        <th class="text-end">금액</th><th class="text-end">수수료</th>
+        <th>메모</th><th class="text-center">상태</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="small text-nowrap">{{ row.transferred_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td class="small">{{ row.source_account }}</td>
+        <td>{{ row.alias }}{% if row.alias != row.name %} <span class="text-muted small">({{ row.name }})</span>{% endif %}</td>
+        <td class="small">{{ row.bank }}</td>
+        <td class="text-end text-nowrap">{{ "{:,}".format(row.amount) }}원</td>
+        <td class="text-end small text-muted">{% if row.fee > 0 %}{{ "{:,}".format(row.fee) }}원{% else %}—{% endif %}</td>
+        <td class="small">{{ row.memo or '—' }}</td>
+        <td class="text-center small">{{ row.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<nav><ul class="pagination pagination-sm justify-content-center">
+  {% for p in range(1, total_pages + 1) %}
+  <li class="page-item {% if p == page %}active{% endif %}">
+    <a class="page-link" href="?page={{ p }}&status={{ status_filter }}">{{ p }}</a>
+  </li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+<p class="text-muted small text-center">총 {{ total }}건</p>
+
+{% else %}
+<p class="text-muted">이체 내역이 없습니다.</p>
+{% endif %}
+{% endblock %}

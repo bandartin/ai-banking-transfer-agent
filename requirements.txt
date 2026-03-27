@@ -1,0 +1,13 @@
+flask>=3.0.0
+flask-sqlalchemy>=3.1.0
+sqlalchemy>=2.0.0
+pydantic>=2.5.0
+langgraph>=0.2.20
+langchain-core>=0.3.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
+pytest-flask>=1.3.0
+
+# Optional LLM providers — uncomment to enable
+# langchain-openai>=0.2.0    # LLM_PROVIDER=openai 사용 시 필요
+# langchain-anthropic>=0.3.0 # LLM_PROVIDER=anthropic 사용 시 필요

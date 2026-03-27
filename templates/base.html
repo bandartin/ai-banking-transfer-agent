@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AI 이체 도우미{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('chat.chat') }}">AI 이체 도우미</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarMain">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarMain">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint in ('chat.chat','chat.index') %}active{% endif %}"
+             href="{{ url_for('chat.chat') }}">채팅</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'accounts.accounts' %}active{% endif %}"
+             href="{{ url_for('accounts.accounts') }}">계좌/잔액</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'favorites.favorites' %}active{% endif %}"
+             href="{{ url_for('favorites.favorites') }}">즐겨찾기</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'recurring.recurring' %}active{% endif %}"
+             href="{{ url_for('recurring.recurring') }}">자동이체</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'history.history' %}active{% endif %}"
+             href="{{ url_for('history.history') }}">이체내역</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint == 'admin.db_viewer' %}active{% endif %}"
+             href="{{ url_for('admin.db_viewer') }}">DB 뷰어</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link {% if request.endpoint and request.endpoint.startswith('agent_logs') %}active{% endif %}"
+             href="{{ url_for('agent_logs.index') }}">에이전트 로그</a>
+        </li>
+      </ul>
+      <span class="navbar-text small" style="color:#aaa;">데모 사용자: 이병민</span>
+    </div>
+  </div>
+</nav>
+
+<main class="container-fluid py-3">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer-bar text-center py-2">
+  으뜸은행 AI 이체 에이전트 데모 &nbsp;|&nbsp; 내부 시연용
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}자동이체{% endblock %}
+
+{% block content %}
+<h5 class="mb-3">자동이체 / 정기이체</h5>
+
+{% if rows %}
+<div class="table-responsive">
+  <table class="table table-bordered table-sm table-hover">
+    <thead class="table-light">
+      <tr>
+        <th>이름</th><th>수신자</th><th>은행</th>
+        <th class="text-end">기본 금액</th>
+        <th class="text-center">이체일</th>
+        <th>다음 납부일</th>
+        <th>메모</th>
+        <th class="text-center">상태</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr {% if not row.is_active %}class="text-muted"{% endif %}>
+        <td>{{ row.alias }}</td>
+        <td>{{ row.recipient_name or '—' }}</td>
+        <td>{{ row.bank_name or '—' }}</td>
+        <td class="text-end">{{ "{:,}".format(row.default_amount) }}원</td>
+        <td class="text-center">{% if row.day_of_month %}매월 {{ row.day_of_month }}일{% else %}—{% endif %}</td>
+        <td>{% if row.next_due_date %}{{ row.next_due_date.strftime('%Y-%m-%d') }}{% else %}—{% endif %}</td>
+        <td class="small">{{ row.memo or '—' }}</td>
+        <td class="text-center">{% if row.is_active %}활성{% else %}비활성{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">등록된 자동이체가 없습니다.</p>
+{% endif %}
+{% endblock %}

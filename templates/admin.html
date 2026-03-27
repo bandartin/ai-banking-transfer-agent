@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}DB 뷰어{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">DB 뷰어 (읽기 전용)</h5>
+  <button class="btn btn-sm btn-warning" id="btn-reset-demo">데모 데이터 초기화</button>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-2">
+    <div class="list-group list-group-flush border">
+      {% for t in tables %}
+      <a href="{{ url_for('admin.db_viewer', table=t) }}"
+         class="list-group-item list-group-item-action py-1 small {% if t == selected_table %}active{% endif %}">
+        {{ t }}
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="col-md-10">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="small text-muted">{{ selected_table }} — {{ total }}행</span>
+      <form class="d-flex gap-1" method="get">
+        <input type="hidden" name="table" value="{{ selected_table }}">
+        <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm"
+               placeholder="검색" style="width:180px;">
+        <button class="btn btn-sm btn-outline-secondary">검색</button>
+        {% if search %}<a href="{{ url_for('admin.db_viewer', table=selected_table) }}" class="btn btn-sm btn-outline-danger">✕</a>{% endif %}
+      </form>
+    </div>
+
+    {% if columns %}
+    <div style="max-height:600px; overflow:auto;">
+      <table class="table table-bordered table-sm" style="font-size:12px;">
+        <thead class="table-light" style="position:sticky;top:0;">
+          <tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            {% for cell in row %}
+            <td class="text-truncate" style="max-width:180px;" title="{{ cell }}">
+              {% if cell is none %}<span class="text-muted">null</span>
+              {% elif cell | string | length > 60 %}{{ cell | string | truncate(60) }}
+              {% else %}{{ cell }}{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('btn-reset-demo').addEventListener('click', function() {
+  if (!confirm('데모 데이터를 초기화하시겠습니까?')) return;
+  fetch('/admin/reset-demo', {method:'POST'})
+    .then(r => r.json())
+    .then(d => { alert(d.message || '완료'); location.reload(); })
+    .catch(e => alert('오류: ' + e));
+});
+</script>
+{% endblock %}

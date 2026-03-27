@@ -1,0 +1,104 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  background: #f5f5f5;
+}
+
+/* Navbar */
+.navbar { background: #333 !important; }
+.navbar-brand, .nav-link { color: #eee !important; }
+.nav-link.active { color: #fff !important; font-weight: bold; }
+.nav-link:hover { color: #fff !important; }
+
+/* Footer */
+.footer-bar {
+  background: #eee;
+  border-top: 1px solid #ccc;
+  font-size: 12px;
+  color: #888;
+}
+
+/* Chat */
+.chat-body {
+  background: #fafafa;
+  border: 1px solid #ddd;
+  padding: 12px;
+  min-height: 300px;
+}
+
+.message-row { display: flex; margin-bottom: 8px; }
+.message-row.user { justify-content: flex-end; }
+.message-row.assistant { justify-content: flex-start; }
+
+.message-bubble {
+  max-width: 82%;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+  border: 1px solid #ccc;
+  border-radius: 2px;
+}
+
+.user-bubble { background: #333; color: #fff; border-color: #333; }
+.assistant-bubble { background: #fff; color: #222; }
+
+/* Confirmation card */
+.confirmation-card {
+  background: #fffde7;
+  border: 1px solid #aaa;
+  padding: 12px;
+  font-size: 13px;
+}
+.confirmation-card table td { padding: 2px 8px; }
+.confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+/* OTP */
+.otp-input {
+  letter-spacing: 0.4em;
+  font-size: 1.2rem;
+  text-align: center;
+  max-width: 180px;
+}
+
+/* Typing indicator */
+.typing-indicator {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 10px;
+}
+.typing-indicator span {
+  width: 7px; height: 7px;
+  background: #999;
+  border-radius: 50%;
+  animation: bounce 1.2s infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+/* Debug / trace panel */
+#debug-panel, #trace-panel { min-height: 60px; font-size: 12px; }
+.debug-row { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #eee; }
+.debug-label { color: #888; }
+.debug-value { font-weight: 600; }
+.trace-pill {
+  display: inline-block;
+  background: #555;
+  color: #fff;
+  padding: 1px 6px;
+  font-size: 11px;
+  margin: 1px;
+  border-radius: 2px;
+}
+
+/* Accounts */
+.balance-display { font-size: 1.4rem; font-weight: 700; }
+.account-number { font-family: monospace; color: #666; font-size: 12px; }
+.limit-card { background: #f0f0f0; padding: 10px; text-align: center; }
+.limit-label { font-size: 11px; color: #666; }
+.limit-value { font-size: 1rem; font-weight: 700; }
