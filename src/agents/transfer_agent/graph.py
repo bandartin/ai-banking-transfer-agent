@@ -284,7 +284,7 @@ def run_transfer_agent(
 
     try:
         if current_app.config.get("LANGSMITH_ENABLED"):
-            from langchain_core.callbacks import collect_runs
+            from langchain_core.tracers.context import collect_runs
             with collect_runs() as cb:
                 result: dict = graph.invoke(base_state)
             if cb.traced_runs:

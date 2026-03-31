@@ -45,16 +45,16 @@ if __name__ == "__main__":
     with app.app_context():
         from src.models.database import db, User
         if db.session.query(User).count() == 0:
-            print("📦 데이터베이스가 비어 있습니다. 시드 데이터를 생성합니다…")
+            print("[DB] Database is empty. Seeding sample data...")
             import seed
             seed.run(app)
 
     port = app.config.get("PORT", 5000)
     ls_status = (
-        f"✅ LangSmith 활성 (프로젝트: {app.config['LANGSMITH_PROJECT']})"
+        f"[LangSmith] Enabled (project: {app.config['LANGSMITH_PROJECT']})"
         if app.config.get("LANGSMITH_ENABLED")
-        else "⬜ LangSmith 비활성 (LANGCHAIN_TRACING_V2=true 설정 시 활성화)"
+        else "[LangSmith] Disabled (enable with LANGCHAIN_TRACING_V2=true)"
     )
-    print(f"\n🏦 AI 이체 도우미 — http://localhost:{port}")
-    print(f"🔭 {ls_status}\n")
+    print(f"\n[APP] AI Transfer Assistant - http://localhost:{port}")
+    print(f"[STATUS] {ls_status}\n")
     app.run(debug=app.config.get("DEBUG", True), port=port, host="0.0.0.0")
