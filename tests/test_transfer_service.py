@@ -1,24 +1,24 @@
 """Tests for the deterministic transfer business logic."""
 
 import pytest
-from src.agents.transfer_agent.schemas import TransferSummary
-from src.agents.transfer_agent.services.transfer_service import (
+from src.agents.context import BankingContext
+from src.agents.common.schemas import TransferSummary
+from src.agents.common.services.transfer_service import (
     calculate_fee,
     validate_transfer,
 )
-from src.models.database import Account
+
+
+def _ctx() -> BankingContext:
+    return BankingContext(user_id=1, session_id="t", interbank_fee=500)
 
 
 class TestFeeCalculation:
     def test_same_bank_free(self, app):
-        with app.app_context():
-            fee = calculate_fee("으뜸은행", "으뜸은행")
-            assert fee == 0
+        assert calculate_fee(_ctx(), "으뜸은행", "으뜸은행") == 0
 
     def test_interbank_fee(self, app):
-        with app.app_context():
-            fee = calculate_fee("으뜸은행", "한빛은행")
-            assert fee == 500
+        assert calculate_fee(_ctx(), "으뜸은행", "한빛은행") == 500
 
 
 class TestValidation:
@@ -42,28 +42,23 @@ class TestValidation:
 
     def test_valid_small_transfer(self, app, db):
         with app.app_context():
-            summary = self._make_summary(50_000)
-            result = validate_transfer(1, summary)
+            result = validate_transfer(1, self._make_summary(50_000))
             assert result.passed is True
             assert result.errors == []
 
     def test_insufficient_balance(self, app, db):
         with app.app_context():
-            # Request more than the DB account balance (8,250,000)
-            summary = self._make_summary(9_000_000)
-            result = validate_transfer(1, summary)
+            result = validate_transfer(1, self._make_summary(9_000_000))
             assert result.passed is False
             assert any("잔액이 부족" in e for e in result.errors)
 
     def test_single_limit_exceeded(self, app, db):
         with app.app_context():
-            summary = self._make_summary(15_000_000, fee=0)  # > 10M limit
-            result = validate_transfer(1, summary)
+            result = validate_transfer(1, self._make_summary(15_000_000, fee=0))
             assert result.passed is False
             assert any("1회 이체 한도" in e for e in result.errors)
 
     def test_zero_amount(self, app, db):
         with app.app_context():
-            summary = self._make_summary(0, fee=0)
-            result = validate_transfer(1, summary)
+            result = validate_transfer(1, self._make_summary(0, fee=0))
             assert result.passed is False

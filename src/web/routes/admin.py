@@ -18,12 +18,14 @@ VIEWABLE_TABLES = [
     "accounts",
     "recipients",
     "favorites",
+    "alias_memories",
     "recurring_transfers",
     "transfer_history",
     "transfer_limits",
     "chat_sessions",
     "chat_messages",
     "audit_logs",
+    "agent_run_logs",
 ]
 
 
@@ -77,6 +79,18 @@ def reset_demo():
         # Run seed script in-process
         import seed  # type: ignore
         seed.run()
+
+        # LangGraph 체크포인트도 함께 초기화 (구버전 상태로 resume 되지 않도록)
+        import os
+        from src.agents.supervisor.graph import reset_graph_singleton
+        reset_graph_singleton()
+        ckpt = current_app.config.get("CHECKPOINT_DB_PATH", "banking_checkpoints.db")
+        if ckpt != ":memory:" and os.path.exists(ckpt):
+            try:
+                os.remove(ckpt)
+            except OSError:
+                pass
+
         return jsonify({"status": "ok", "message": "데모 데이터가 초기화되었습니다."})
     except Exception as exc:
         current_app.logger.exception("Reset failed")

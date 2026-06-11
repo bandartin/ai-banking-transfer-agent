@@ -7,9 +7,11 @@ from .recurring import bp as recurring_bp
 from .history import bp as history_bp
 from .admin import bp as admin_bp
 from .agent_logs import bp as agent_logs_bp
+from .a2a import bp as a2a_bp
 
 
 def register_routes(app):
+    app.register_blueprint(a2a_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(accounts_bp)
     app.register_blueprint(favorites_bp)

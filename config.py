@@ -25,8 +25,12 @@ class Config:
     SQLALCHEMY_DATABASE_URI: str = os.getenv("DATABASE_URL", "sqlite:///banking_demo.db")
     SQLALCHEMY_TRACK_MODIFICATIONS: bool = False
 
-    # LLM provider: "deterministic" | "openai" | "anthropic"
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "deterministic")
+    # LangGraph checkpointer (SqliteSaver) — 멀티턴 상태 영속화
+    CHECKPOINT_DB_PATH: str = os.getenv("CHECKPOINT_DB_PATH", "banking_checkpoints.db")
+
+    # LLM provider: "openai" | "deterministic"
+    # 기본은 openai — OPENAI_API_KEY 가 없으면 자동으로 결정론 모드로 폴백한다.
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")

@@ -1,8 +1,8 @@
 """
-Deterministic transfer business logic.
+Deterministic transfer business logic (Flask-free).
 
-All validation and execution is implemented as pure Python logic against
-SQLite state.  The LLM is never involved in these decisions.
+수수료/OTP 임계값 등 정책 값은 current_app 이 아니라 BankingContext 로 주입받는다.
+LLM 은 이 모듈의 어떤 결정에도 관여하지 않는다.
 """
 
 from __future__ import annotations
@@ -11,8 +11,6 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from flask import current_app
-
 from src.models.database import (
     db,
     Account,
@@ -20,14 +18,14 @@ from src.models.database import (
     Favorite,
     Recipient,
     TransferHistory,
-    TransferLimit,
 )
-from src.agents.transfer_agent.schemas import (
+from src.agents.context import BankingContext
+from src.agents.common.schemas import (
     TransferSummary,
     ValidationResult,
     TransferResult,
 )
-from src.agents.transfer_agent.services.balance_service import (
+from src.agents.common.services.balance_service import (
     get_primary_account,
     get_transfer_limit,
     _maybe_reset_daily,
@@ -39,14 +37,11 @@ from src.agents.transfer_agent.services.balance_service import (
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def calculate_fee(source_bank: str, destination_bank: str) -> int:
-    """
-    Same-bank transfers are free; all other transfers cost INTERBANK_FEE (KRW).
-    """
-    fee = current_app.config.get("INTERBANK_FEE", 500)
+def calculate_fee(ctx: BankingContext, source_bank: str, destination_bank: str) -> int:
+    """Same-bank transfers are free; all other transfers cost ctx.interbank_fee."""
     if source_bank == destination_bank:
         return 0
-    return fee
+    return ctx.interbank_fee
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +50,7 @@ def calculate_fee(source_bank: str, destination_bank: str) -> int:
 
 
 def build_transfer_summary(
+    ctx: BankingContext,
     user_id: int,
     recipient_data: dict,
     amount: int,
@@ -65,9 +61,8 @@ def build_transfer_summary(
     if not source_account:
         return None
 
-    fee = calculate_fee(source_account.bank_name, recipient_data["bank_name"])
+    fee = calculate_fee(ctx, source_account.bank_name, recipient_data["bank_name"])
     total = amount + fee
-    otp_threshold = current_app.config.get("OTP_THRESHOLD", 3_000_000)
 
     return TransferSummary(
         source_account_id=source_account.id,
@@ -83,7 +78,7 @@ def build_transfer_summary(
         total_deducted=total,
         remaining_balance=source_account.balance - total,
         memo=memo,
-        requires_otp=amount >= otp_threshold,
+        requires_otp=amount >= ctx.otp_threshold,
         warnings=[],
     )
 
@@ -173,7 +168,6 @@ def execute_transfer(
         if not account:
             return TransferResult(success=False, error_message="출금 계좌를 찾을 수 없습니다.")
 
-        # Retrieve recipient — look up by account number + bank
         recipient = (
             db.session.query(Recipient)
             .filter(
@@ -248,11 +242,5 @@ def execute_transfer(
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Utilities
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 def _fmt(amount: int) -> str:
-    """Format integer KRW with comma separators."""
     return f"{amount:,}"

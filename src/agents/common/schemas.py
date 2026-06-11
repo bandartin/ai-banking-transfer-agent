@@ -1,11 +1,42 @@
 """
-Pydantic schemas used for structured extraction, validation, and API contracts.
+Pydantic schemas — structured extraction, planning, validation, API contracts.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Supervisor execution plan (LLM structured output)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+AgentName = Literal["transfer", "inquiry", "recommend", "security"]
+
+
+class PlanStep(BaseModel):
+    """Supervisor 가 하위 에이전트에게 내리는 작업 한 건."""
+
+    agent: AgentName = Field(description="호출할 하위 에이전트")
+    sub_intent: str = Field(
+        description=(
+            "에이전트 내 세부 작업: inquiry→balance|history|recurring, "
+            "recommend→recipients, security→report, transfer→transfer"
+        )
+    )
+    reason: str = Field("", description="이 에이전트를 선택한 이유 (가시화용)")
+
+
+class ExecutionPlan(BaseModel):
+    """Supervisor planning 결과 — 병렬 단계는 Send 로 fan-out 된다."""
+
+    steps: List[PlanStep] = Field(default_factory=list)
+    parallel: bool = Field(False, description="steps 를 병렬 실행할지 여부")
+    primary_intent: str = Field("unknown", description="대표 인텐트 (로그/UI용)")
+    planner: str = Field("rule", description="'llm' | 'rule' — 계획 생성 주체")
+    note: str = Field("", description="플래너 메모 (가시화용)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -16,7 +47,7 @@ from pydantic import BaseModel, Field
 class ExtractedSlots(BaseModel):
     """Slots extracted from a single user utterance."""
 
-    recipient_alias: Optional[str] = Field(None, description="수신자 별칭 (엄마, 민수 등)")
+    recipient_alias: Optional[str] = Field(None, description="수신자 별칭 (엄마, 여친, 민수 등)")
     amount: Optional[int] = Field(None, description="이체 금액 (KRW 정수)")
     memo: Optional[str] = Field(None, description="이체 메모")
     use_last_transfer: bool = Field(False, description="'지난번처럼' 패턴 감지 여부")
@@ -25,37 +56,22 @@ class ExtractedSlots(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Resolved recipient
+# Security agent — risk assessment
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class ResolvedRecipient(BaseModel):
-    """A fully resolved transfer target."""
+class RiskAssessment(BaseModel):
+    """SecurityAgent 의 결정론적 리스크 평가 결과."""
 
-    favorite_id: Optional[int] = None
-    recipient_id: int
-    alias: Optional[str] = None
-    name: str
-    bank_name: str
-    account_number: str
-    source: str = Field(description="'favorite' | 'history' | 'recurring'")
-    confidence: float = Field(1.0, ge=0.0, le=1.0)
-
-
-class AmbiguityCandidate(BaseModel):
-    """One entry in a list of ambiguous recipient candidates."""
-
-    index: int  # 1-based, for display ("1번", "2번")
-    favorite_id: Optional[int] = None
-    recipient_id: int
-    alias: Optional[str] = None
-    name: str
-    bank_name: str
-    account_number: str
+    risk_score: int = Field(0, ge=0, le=100)
+    level: str = Field("low", description="'low' | 'medium' | 'high'")
+    triggered_rules: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    force_otp: bool = Field(False, description="규칙상 금액과 무관하게 OTP 강제")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Transfer summary (shown in confirmation card)
+# Transfer domain schemas
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -82,20 +98,10 @@ class TransferSummary(BaseModel):
     warnings: List[str] = []
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Validation result
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 class ValidationResult(BaseModel):
     passed: bool
     errors: List[str] = []
     warnings: List[str] = []
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Transfer execution result
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 class TransferResult(BaseModel):
@@ -103,19 +109,6 @@ class TransferResult(BaseModel):
     transfer_id: Optional[int] = None
     new_balance: Optional[int] = None
     error_message: Optional[str] = None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Balance info
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class BalanceInfo(BaseModel):
-    accounts: List[dict]  # list of {name, number, balance, available_today}
-    daily_limit: int
-    daily_used: int
-    daily_remaining: int
-    single_transfer_limit: int
 
 
 # ─────────────────────────────────────────────────────────────────────────────

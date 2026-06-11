@@ -1,6 +1,6 @@
-from flask import Blueprint, current_app, render_template
+﻿from flask import Blueprint, current_app, render_template
 from src.models.database import db, Favorite, Recipient
-from src.agents.transfer_agent.services.recommendation_service import get_recommendations
+from src.agents.common.services.recommendation_service import get_recommendations
 
 bp = Blueprint("favorites", __name__)
 
@@ -36,3 +36,4 @@ def favorites():
         })
 
     return render_template("favorites.html", rows=rows)
+

@@ -39,8 +39,17 @@ class User(db.Model):
     display_name = Column(String(100), nullable=False)
     phone = Column(String(20))
     email = Column(String(100))
+    birth_year = Column(Integer)                     # 나이 기반 맞춤 말투(Dynamic Prompting)
+    customer_tier = Column(String(20), default="standard")  # standard / vip
+    risk_profile = Column(String(20), default="normal")     # normal / high → 보안 강화
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+
+    @property
+    def age(self) -> Optional[int]:
+        if not self.birth_year:
+            return None
+        return datetime.now().year - self.birth_year + 1  # 한국식 나이 근사
 
     accounts = relationship("Account", back_populates="user", lazy="select")
     favorites = relationship("Favorite", back_populates="user", lazy="select")
@@ -120,6 +129,33 @@ class Favorite(db.Model):
 
     def __repr__(self) -> str:
         return f"<Favorite alias='{self.alias}' recipient={self.recipient_id}>"
+
+
+class AliasMemory(db.Model):
+    """
+    호칭 학습 메모리 — 사용자가 수신자를 부르는 표현을 세션을 넘어 기억한다.
+
+    예) "여친" / "여자친구" / "내사랑" → recipient(김서연)
+    되묻기(clarification)로 해소된 호칭이 여기 저장되고,
+    같은 호칭이 다른 사람으로 재지정되면 매핑이 갱신된다.
+    """
+
+    __tablename__ = "alias_memories"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    alias = Column(String(100), nullable=False)        # "여친", "내사랑", …
+    recipient_id = Column(Integer, ForeignKey("recipients.id"), nullable=False)
+    hit_count = Column(Integer, default=1)             # 사용 횟수 = 신뢰도
+    source = Column(String(20), default="learned")     # learned / seed
+    last_used_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    recipient = relationship("Recipient")
+
+    def __repr__(self) -> str:
+        return f"<AliasMemory '{self.alias}' → recipient={self.recipient_id} ({self.hit_count}회)>"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -300,6 +336,8 @@ class AgentRunLog(db.Model):
     pending_state = Column(String(50))
     graph_trace = Column(Text)          # comma-separated node names
     node_logs_json = Column(Text)       # JSON array — one entry per node execution
+    plan_json = Column(Text)            # Supervisor ExecutionPlan (JSON)
+    agent_activity_json = Column(Text)  # 에이전트 협업 활동 타임라인 (JSON)
     total_duration_ms = Column(Integer)
     langsmith_url = Column(String(500))
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -314,7 +352,30 @@ class AgentRunLog(db.Model):
 
 
 def init_db(app) -> None:
-    """Attach SQLAlchemy to the Flask *app* and create all tables."""
+    """Attach SQLAlchemy to the Flask *app* and create all tables.
+
+    데모 DB는 마이그레이션 도구 없이 운영하므로, 구버전 스키마가 감지되면
+    전체를 재생성한다 (시드는 앱 시작 시 자동 수행됨).
+    """
     db.init_app(app)
     with app.app_context():
         db.create_all()
+        if _schema_outdated():
+            db.drop_all()
+            db.create_all()
+
+
+def _schema_outdated() -> bool:
+    """신규 컬럼/테이블 존재 여부로 스키마 세대를 판별한다."""
+    from sqlalchemy import inspect
+
+    insp = inspect(db.engine)
+    if "alias_memories" not in insp.get_table_names():
+        return True
+    user_cols = {c["name"] for c in insp.get_columns("users")}
+    if "birth_year" not in user_cols:
+        return True
+    log_cols = {c["name"] for c in insp.get_columns("agent_run_logs")}
+    if "plan_json" not in log_cols:
+        return True
+    return False

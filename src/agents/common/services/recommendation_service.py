@@ -1,4 +1,4 @@
-"""
+﻿"""
 Recipient recommendation engine.
 
 Scoring model:
@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import List
 
 from src.models.database import db, Favorite, RecurringTransfer, TransferHistory
-from src.agents.transfer_agent.schemas import RecipientRecommendation
+from src.agents.common.schemas import RecipientRecommendation
 
 
 def get_recommendations(user_id: int, limit: int = 5) -> List[RecipientRecommendation]:
@@ -96,3 +96,4 @@ def get_recommendations(user_id: int, limit: int = 5) -> List[RecipientRecommend
         )
 
     return results
+
