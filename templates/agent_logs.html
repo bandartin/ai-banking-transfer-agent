@@ -33,105 +33,86 @@
   </tbody>
 </table>
 
-{# 그래프 흐름 (수평 표시) #}
+{% set agent_colors = {
+  "supervisor": "#6f42c1", "transfer": "#0d6efd", "inquiry": "#198754",
+  "recommend": "#fd7e14", "security": "#dc3545"
+} %}
+
+{# Supervisor 실행 계획 #}
+{% if plan %}
+<h6 class="mb-2">🧠 Supervisor 실행 계획
+  <span class="text-muted small fw-normal">(planner: {{ plan.planner }}{% if plan.parallel %} · ⚡병렬{% endif %})</span>
+</h6>
+<div class="mb-4 d-flex flex-wrap gap-2">
+  {% for s in plan.steps %}
+  <div class="border rounded px-2 py-1" style="font-size:12px;">
+    <span class="badge" style="background:{{ agent_colors.get(s.agent, '#6c757d') }};">{{ s.agent }}</span>
+    <code style="font-size:11px;">{{ s.sub_intent }}</code>
+    <div class="text-muted" style="font-size:11px;">{{ s.reason }}</div>
+  </div>
+  {% else %}
+  <span class="text-muted small">호출할 하위 에이전트 없음 (직접 응답)</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# 그래프 흐름 (수평 표시) — agent.node 형식 #}
 <h6 class="mb-2">그래프 실행 경로</h6>
 <div class="mb-4 d-flex flex-wrap align-items-center gap-1" style="font-size:12px;">
   <span class="badge bg-dark">START</span>
   {% for name in trace %}
   <span>→</span>
-  <span class="badge" style="background:#555;">{{ name }}</span>
+  {% set agent = name.split('.')[0] %}
+  <span class="badge" style="background:{{ agent_colors.get(agent, '#555') }};">{{ name }}</span>
   {% endfor %}
   <span>→</span>
   <span class="badge bg-dark">END</span>
 </div>
 
-{# 노드별 상세 #}
-<h6 class="mb-2">노드별 실행 상세</h6>
-{% for entry in node_logs %}
-<div class="border mb-2" style="font-size:13px;">
-  {# 노드 헤더 #}
-  <div class="d-flex justify-content-between align-items-center px-3 py-2"
-       style="background:#f0f0f0; border-bottom:1px solid #ddd;">
+{# 에이전트 협업 타임라인 #}
+{% if agent_activity %}
+<h6 class="mb-2">🤝 에이전트 협업 타임라인</h6>
+<div class="mb-4 border bg-white p-2" style="max-width:700px;">
+  {% for a in agent_activity %}
+  <div class="d-flex align-items-start gap-2 mb-1" style="font-size:12px;">
+    <span class="text-muted" style="font-size:10px; min-width:55px;">{{ a.ts }}</span>
+    <span class="badge" style="background:{{ agent_colors.get(a.agent, '#6c757d') }};">{{ a.agent }}</span>
     <span>
-      <strong>#{{ entry.order }} {{ entry.node }}</strong>
-      {% if not entry.is_last %}
-        <span class="text-muted ms-2" style="font-size:11px;">→ {{ entry.next_node }}</span>
-      {% else %}
-        <span class="text-muted ms-2" style="font-size:11px;">→ END</span>
+      <strong>{{ a.event }}</strong>
+      {% if a.detail %}
+      <span class="text-muted" style="font-size:11px;">
+        {{ a.detail.note or a.detail.name or '' }}
+        {% if a.detail.risk_score is defined %}위험도 {{ a.detail.risk_score }}점 ({{ a.detail.level }}){% endif %}
+        {% if a.detail.steps %}→ {{ a.detail.steps | map(attribute='agent') | join(' + ') }}{% endif %}
+      </span>
       {% endif %}
     </span>
-    <span class="text-muted" style="font-size:11px;">{{ entry.duration_ms }}ms</span>
   </div>
-
-  <div class="row g-0">
-    {# 입력 #}
-    <div class="col-md-6 px-3 py-2" style="border-right:1px solid #eee;">
-      <div class="text-muted mb-1" style="font-size:11px; text-transform:uppercase;">입력 (읽은 상태)</div>
-      {% if entry.input %}
-      <table class="table table-sm mb-0" style="font-size:12px;">
-        <tbody>
-          {% for k, v in entry.input.items() %}
-          <tr>
-            <td class="text-muted" style="width:45%; padding:2px 4px;">{{ k }}</td>
-            <td style="padding:2px 4px; word-break:break-all;">
-              {% if v is none %}
-                <span class="text-muted">null</span>
-              {% elif v == true %}
-                <span class="text-success">true</span>
-              {% elif v == false %}
-                <span class="text-muted">false</span>
-              {% elif v is iterable and v is not string %}
-                <span class="text-muted">[{{ v | length }}개]</span>
-              {% else %}
-                {{ v }}
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <span class="text-muted" style="font-size:12px;">—</span>
-      {% endif %}
-    </div>
-
-    {# 출력 #}
-    <div class="col-md-6 px-3 py-2">
-      <div class="text-muted mb-1" style="font-size:11px; text-transform:uppercase;">출력 (업데이트한 필드)</div>
-      {% if entry.output %}
-      <table class="table table-sm mb-0" style="font-size:12px;">
-        <tbody>
-          {% for k, v in entry.output.items() %}
-          <tr>
-            <td class="text-muted" style="width:45%; padding:2px 4px;">{{ k }}</td>
-            <td style="padding:2px 4px; word-break:break-all;">
-              {% if v is none %}
-                <span class="text-muted">null</span>
-              {% elif v == true %}
-                <span class="text-success">true</span>
-              {% elif v == false %}
-                <span class="text-muted">false</span>
-              {% elif v is iterable and v is not string %}
-                {% if v | length == 0 %}
-                  <span class="text-muted">[]</span>
-                {% else %}
-                  <span class="text-muted">[{{ v | length }}개]</span>
-                {% endif %}
-              {% else %}
-                <strong>{{ v }}</strong>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <span class="text-muted" style="font-size:12px;">—</span>
-      {% endif %}
-    </div>
-  </div>
+  {% endfor %}
 </div>
-{% endfor %}
+{% endif %}
+
+{# 노드별 실행 시간 #}
+<h6 class="mb-2">노드별 실행 시간</h6>
+<div class="table-responsive" style="max-width:700px;">
+  <table class="table table-bordered table-sm" style="font-size:12px;">
+    <thead class="table-light">
+      <tr><th style="width:40px;">#</th><th>에이전트</th><th>노드</th><th class="text-end">소요(ms)</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in node_logs %}
+      <tr>
+        <td class="text-muted">{{ loop.index }}</td>
+        <td><span class="badge" style="background:{{ agent_colors.get(entry.agent, '#6c757d') }};">{{ entry.agent }}</span></td>
+        <td><code style="font-size:11px;">{{ entry.node }}</code></td>
+        <td class="text-end">{{ entry.duration_ms }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">기록 없음 (interrupt 대기 턴)</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
 {% else %}
 {# ── 목록 보기 ─────────────────────────────────────────────────────────────── #}

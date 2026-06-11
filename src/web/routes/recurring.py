@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, render_template
+﻿from flask import Blueprint, current_app, render_template
 from src.models.database import db, RecurringTransfer, Favorite, Recipient
 
 bp = Blueprint("recurring", __name__)
@@ -6,7 +6,8 @@ bp = Blueprint("recurring", __name__)
 
 @bp.route("/recurring")
 def recurring():
-    user_id = current_app.config["DEMO_USER_ID"]
+    from src.web.routes.chat import current_user_id
+    user_id = current_user_id()
 
     rts = (
         db.session.query(RecurringTransfer)
@@ -41,3 +42,4 @@ def recurring():
         })
 
     return render_template("recurring.html", rows=rows)
+

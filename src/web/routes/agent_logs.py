@@ -51,19 +51,16 @@ def detail(run_id: int):
     if not run:
         return "로그를 찾을 수 없습니다.", 404
 
-    # 노드 로그 파싱
-    try:
-        node_logs = json.loads(run.node_logs_json or "[]")
-    except Exception:
-        node_logs = []
+    def _parse(blob, default):
+        try:
+            return json.loads(blob or "") or default
+        except Exception:
+            return default
 
-    # 라우팅 결정 추론: graph_trace 순서로 "→" 연결
+    node_logs = _parse(run.node_logs_json, [])
+    plan = _parse(run.plan_json, None)
+    agent_activity = _parse(run.agent_activity_json, [])
     trace = [t.strip() for t in (run.graph_trace or "").split(",") if t.strip()]
-
-    # 노드별 다음 노드 매핑
-    for i, entry in enumerate(node_logs):
-        entry["next_node"] = trace[i + 1] if i + 1 < len(trace) else "END"
-        entry["is_last"] = i == len(node_logs) - 1
 
     return render_template(
         "agent_logs.html",
@@ -75,5 +72,7 @@ def detail(run_id: int):
         intents=[],
         detail=run,
         node_logs=node_logs,
+        plan=plan,
+        agent_activity=agent_activity,
         trace=trace,
     )

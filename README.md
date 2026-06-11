@@ -1,169 +1,266 @@
-# Prebuilt Banking AI Transfer Agent
+# Banking AI Transfer Agent — Supervisor 멀티 에이전트 에디션
 
-내부 재사용 가능한 은행 이체 AI 에이전트 데모입니다.
-으뜸은행 차세대 뱅킹 프로젝트에 **사전 제작(prebuilt) 에셋**으로 임포트할 수 있도록 설계되었습니다.
-
----
-
-## 목업 데이터 구조
-
-앱 최초 실행 시 `seed.py`가 자동으로 SQLite DB에 데모 데이터를 생성합니다.
-아래 구조를 먼저 파악하면 데모 시나리오와 에이전트 동작을 이해하기 훨씬 쉽습니다.
-
-### 데모 사용자
-
-| 항목 | 값 |
-|------|----|
-| 이름 | 이병민 |
-| 로그인 ID | kimcs |
-| 1회 이체 한도 | 10,000,000원 |
-| 일일 이체 한도 | 30,000,000원 |
-
-### 계좌
-
-| 계좌명 | 은행 | 계좌번호 | 잔액 | 비고 |
-|--------|------|----------|------|------|
-| 주계좌 | 으뜸은행 | 024-01-0123456 | 8,250,000원 | 기본 출금 계좌 |
-| 저축계좌 | 으뜸은행 | 024-02-0654321 | 5,250,000원 | |
-
-주계좌 잔액은 **일반 이체(소액)**, **잔액 부족 시나리오(9백만 이상 시도)**, **OTP 시나리오(3백만 이상)** 를 모두 커버할 수 있도록 설정되어 있습니다.
-
-### 수신자 및 즐겨찾기
-
-에이전트가 "엄마", "민수" 같은 별칭으로 수신자를 찾는 기반 데이터입니다.
-
-| 별칭 | 실명 | 은행 | 이체 횟수 | 마지막 이체 | 비고 |
-|------|------|------|-----------|-------------|------|
-| 엄마 | 이순자 | 한빛은행 | 12회 | 5일 전 | |
-| 아빠 | 김영수 | 나라은행 | 8회 | 20일 전 | |
-| 민수 | 박민수 | 새벽은행 | 5회 | 10일 전 | **모호성 시나리오용** |
-| 민수 | 이민수 | 구름뱅크 | 3회 | 15일 전 | **모호성 시나리오용** |
-| 집주인 | 장태호 | 하늘은행 | 12회 | 2일 전 | |
-| 관리사무소 | 관리사무소 | 으뜸은행 | 12회 | 2일 전 | |
-| 지연 | 박지연 | 바람뱅크 | 6회 | 30일 전 | |
-| 동생 | 이서준 | 들판은행 | 4회 | 45일 전 | |
-| 적금 | 미래적금 | 으뜸은행 | 12회 | 3일 전 | |
-
-> **"민수" 중복 설계 의도**: 별칭이 동일한 수신자가 2명 등록되어 있어, "민수한테 5만원 보내줘" 입력 시 에이전트가 후보 목록을 제시하고 사용자에게 선택을 요청하는 **모호성 해소(clarification)** 플로우를 시연합니다.
-
-### 정기이체
-
-| 별칭 | 수신자 | 금액 | 매월 |
-|------|--------|------|------|
-| 월세 | 장태호 (집주인) | 550,000원 | 10일 |
-| 관리비 | 관리사무소 | 80,000원 | 25일 |
-| 용돈 | 이순자 (엄마) | 200,000원 | 1일 |
-| 적금 | 미래적금 | 500,000원 | 5일 |
-
-"월세 보내야 하지?" 입력 시 에이전트가 정기이체 데이터를 참조하여 자동으로 금액과 수신자를 채워 확인 카드를 제시합니다.
-
-### 이체 내역 (최근 40일)
-
-에이전트의 "지난번처럼 보내줘" 추천 및 이체내역 조회 시나리오에 사용됩니다.
-
-| 수신자 | 금액 | 메모 | 시점 |
-|--------|------|------|------|
-| 장태호 | 550,000원 | 4월 월세 | 2일 전 |
-| 이순자 | 200,000원 | 엄마 용돈 | 3일 전 |
-| 미래적금 | 500,000원 | 자유적금 | 5일 전 |
-| 관리사무소 | 80,000원 | 4월 관리비 | 7일 전 |
-| 박지연 | 50,000원 | 밥값 더치페이 | 10일 전 |
-| 이순자 | 100,000원 | 생일 용돈 | 15일 전 |
-| 김영수 | 300,000원 | 아버지 병원비 | 20일 전 |
-| 박민수 | 30,000원 | 커피값 | 25일 전 |
-| 이서준 | 150,000원 | 동생 교통비 | 30일 전 |
-| 장태호 | 550,000원 | 3월 월세 | 33일 전 |
-| 이순자 | 200,000원 | 3월 엄마 용돈 | 33일 전 |
-| 박지연 | 70,000원 | 축의금 | 40일 전 |
-
-### 수수료 정책
-
-| 조건 | 수수료 |
-|------|--------|
-| 같은 은행 (으뜸은행 → 으뜸은행) | 0원 |
-| 타행 이체 | 500원 |
-| OTP 요청 기준 | 1회 이체 3,000,000원 이상 |
+개인뱅킹 **자연어 이체** AI 에이전트 데모입니다.
+으뜸은행 차세대 뱅킹 프로젝트에 **사전 제작(prebuilt) 에셋**으로 임포트할 수 있도록 설계되었으며,
+LangGraph 1.x 의 최신 기능(Runtime, Send, Command, interrupt, Checkpointer, 노드 캐싱)과
+A2A(Agent-to-Agent) 협업 구조를 실전 형태로 시연합니다.
 
 ---
 
-## 아키텍처 원칙: LLM은 이해만, 결정은 코드가
+## 아키텍처 — Supervisor 하이라키 멀티 에이전트
 
-이 시스템에서 LLM은 **자연어 이해**만 담당합니다.
+```
+                      ┌──────────────────────────────────┐
+   사용자 메시지 ────▶│   Supervisor (Leader) Agent       │◀── Runtime Context
+                      │   · LLM Planning (rule 폴백)      │    (나이/등급/리스크/LLM)
+                      │   · ExecutionPlan 구조화 출력      │
+                      └───┬─────────┬─────────┬─────┬────┘
+              Send(병렬)  │         │         │     │
+                          ▼         ▼         ▼     ▼
+                   ┌──────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐
+                   │ Transfer │ │ Inquiry │ │Recommend│ │ Security │
+                   │ 이체 실행 │ │잔액/내역 │ │  추천   │ │사기탐지   │
+                   └────┬─────┘ └─────────┘ └─────────┘ └────▲─────┘
+                        │      A2A 협업: 리스크 평가 의뢰      │
+                        └─────────────────────────────────────┘
+                          ▼
+                      respond (집계 + 나이 맞춤 말투 합성)
+```
 
-| 역할 | 담당자 |
-|------|--------|
-| 의도(intent) 분류 | LLM 또는 결정론적 파서 |
-| 슬롯(recipient, amount 등) 추출 | LLM 또는 결정론적 파서 |
-| 수신자 해석 / 추천 순위 | 결정론적 Python 로직 |
-| 잔액 확인 | 결정론적 Python 로직 |
-| 한도 검증 | 결정론적 Python 로직 |
-| 이체 실행 | 결정론적 Python → SQLite 트랜잭션 |
-| 감사 로그 | 결정론적 Python 로직 |
+- **Supervisor 가 계획(Plan)을 세우고**, 계획에 따라 하위 에이전트를 `Send` 로 **동적·병렬** 디스패치합니다.
+  예: "잔고 보여주고 자주 보내는 사람도 추천해줘" → `inquiry` + `recommend` 병렬 실행 후 응답 합성.
+- **TransferAgent ↔ SecurityAgent 협업**: 확인 카드를 띄우기 전에 Transfer 가 Security 서브그래프를
+  직접 호출(A2A)하여 리스크 평가를 의뢰합니다. 심야 고액·낯선 수신자·단시간 다건·보안강화 고객
+  룰에 따라 경고가 붙거나 OTP 가 강제됩니다.
+- **확인 대기 중 새 요청** ("잔고 얼마지?") 이 오면 Transfer 가 `Command(graph=PARENT)` 로
+  Supervisor 에 제어를 반납하고 재계획합니다 — 계층 간 핸드오프.
+- 채팅 화면 우측의 **"Supervisor 실행 계획" / "에이전트 협업 타임라인"** 패널에서
+  리더가 어떤 에이전트를 어떤 이유로 불렀는지 실시간으로 보입니다.
 
-LLM이 실제 이체 여부를 결정하지 않습니다. 이는 금융 규정 준수(컴플라이언스), 예측 가능성, 감사 추적성을 보장하기 위한 설계 원칙입니다.
+### 원칙: LLM은 이해·계획·표현만, 결정은 코드가
+
+| 역할 | 담당 |
+|------|------|
+| 의도 분류 / 슬롯 추출 | LLM (키 없으면 결정론적 한국어 파서) |
+| 실행 계획(어떤 에이전트를 부를지) | LLM 구조화 출력 (rule 플래너 폴백) |
+| 응답 말투(나이 맞춤) | LLM 다듬기 + 결정론적 톤 보정 |
+| 수신자 해석 / 호칭 학습 | 결정론적 Python + AliasMemory 테이블 |
+| 잔액·한도 검증 / 리스크 룰 / 이체 실행 / 감사 로그 | **결정론적 Python — LLM 무관** |
+
+LLM 이 이체 여부·금액·수신자를 결정하지 않습니다 (금융 컴플라이언스·감사 추적성).
+
+---
+
+## 적용된 LangGraph 1.x 최신 기능
+
+| 기능 | 적용 위치 | 설명 |
+|------|----------|------|
+| **Runtime + `context_schema`** | `src/agents/context.py` | `BankingContext` 로 사용자/정책/LLM 의존성 주입 — 아래 학습 가이드 참고 |
+| **`Send` API** | `supervisor/graph.py` | 계획 기반 동적 병렬 fan-out |
+| **`Command(goto=)`** | `subagents/transfer.py` | 노드가 다음 노드를 동적으로 지목 |
+| **`Command(graph=PARENT)`** | `subagents/transfer.py` | 서브그래프 → 부모(plan) 계층 간 핸드오프 |
+| **`interrupt()` / `Command(resume=)`** | 되묻기·금액·확인·OTP | 정식 Human-in-the-Loop 멀티턴 (수동 플래그 제거) |
+| **Checkpointer (`SqliteSaver`)** | `supervisor/graph.py` | thread_id(=세션)별 상태 영속화 — durable execution |
+| **Subgraph 합성** | `subagents/*` | 각 에이전트가 독립 `StateGraph` → 상위 그래프 노드 |
+| **노드 캐싱 (`CachePolicy`)** | `subagents/recommend.py` | 추천 계산을 사용자별 60초 캐시 |
+| **Structured Output** | `supervisor/planner.py` | `ExecutionPlan` Pydantic 스키마 강제 |
+| **A2A Agent Card** | `src/agents/a2a/` | 디스커버리 + JSON-RPC invoke 엔드포인트 |
+
+---
+
+## LangGraph Runtime 학습 가이드
+
+이 프로젝트의 모든 노드는 `(state, runtime)` 시그니처를 사용합니다.
+
+### State 와 Context 의 분리
+
+| | State | Runtime Context |
+|---|-------|----------------|
+| 성격 | **가변** — 대화 중 노드가 읽고 갱신 | **불변** — 한 번의 invoke 동안 고정 |
+| 예시 | intent, amount, 검증 결과 | user_id, 나이, LLM 설정, 수수료 정책 |
+| 전달 | 노드 반환값으로 병합 | `graph.invoke(state, context=…)` 로 주입 |
+| 체크포인트 | 저장됨 | 저장 안 됨 (매 호출 새로 주입) |
+
+### 사용 패턴 (이 저장소의 실제 코드)
+
+```python
+from dataclasses import dataclass
+from langgraph.graph import StateGraph
+from langgraph.runtime import Runtime
+
+@dataclass
+class BankingContext:              # ① context_schema 정의 (src/agents/context.py)
+    user_id: int
+    age: int | None = None         #    → 나이 기반 맞춤 말투의 입력원
+    llm_provider: str = "deterministic"
+    otp_threshold: int = 3_000_000
+
+def plan_node(state, runtime: Runtime[BankingContext]):   # ② 노드에서 접근
+    ctx = runtime.context          #    타입 안전한 의존성 — current_app 불필요
+    ...
+
+graph = (
+    StateGraph(BankingState, context_schema=BankingContext)  # ③ 그래프에 등록
+    .add_node("plan", plan_node)
+    ...
+    .compile(checkpointer=SqliteSaver(conn))
+)
+
+graph.invoke(                       # ④ 호출 시 주입 — State 와 분리되어 전달
+    fresh_turn_state(...),
+    config={"configurable": {"thread_id": session_id}},
+    context=BankingContext(user_id=1, age=30, ...),
+)
+```
+
+### Runtime 이 이 프로젝트에서 해결한 문제 3가지
+
+1. **Flask 결합 제거** — 노드가 `current_app.config` 대신 `runtime.context` 를 읽으므로
+   에이전트 패키지가 웹 없이(A2A 단독 호출, 테스트, CLI) 동작합니다.
+2. **Dynamic Prompting 의 입력원** — 나이/등급/리스크가 context 로 들어와
+   플래너 프롬프트와 응답 말투가 상황에 따라 달라집니다.
+3. **테스트 용이성** — `BankingContext(llm_provider="deterministic")` 주입만으로
+   LLM 없는 결정론 경로를 강제할 수 있습니다.
+
+---
+
+## 호칭 학습 메모리 (세션을 넘는 기억)
+
+사용자가 수신자를 부르는 표현은 계속 변합니다 — "여친", "여자친구", "내사랑"이
+사실은 모두 **김서연**일 수 있습니다. 이를 `alias_memories` 테이블로 관리합니다.
+
+```
+1턴: "여친한테 2만원 보내줘"
+  → 즐겨찾기에 '여친' 없음 → AI가 되묻기: "'여친'이 누구신지 아직 몰라요…"
+2턴: "김서연"
+  → 이체 확인 카드 + AliasMemory 에 (여친 → 김서연) 저장
+─── 앱 재시작 / 새 세션 ───
+"여친한테 5만원" → 즉시 김서연으로 해석 (사용 횟수 누적)
+"내사랑한테 3만원" → 한 번 더 되묻고 학습 → 두 호칭 모두 김서연을 가리킴
+```
+
+- 같은 호칭이 **다른 사람으로 재지정되면 매핑이 갱신**됩니다 (호칭은 변한다).
+- 동명이인("민수" 2명)도 한 번 선택하면 다음부터 **지난번 선택을 기억**해 즉시 해석합니다.
+- 학습 현황은 **즐겨찾기 페이지의 "AI가 학습한 호칭"** 섹션과 DB 뷰어에서 확인됩니다.
+- LangGraph Store 대신 RDB 를 쓰는 이유: 금융 도메인의 장기 기억은 감사 가능한
+  정형 저장소에 두는 것이 컴플라이언스에 유리합니다.
+
+---
+
+## Dynamic Prompting — 나이 맞춤 말투
+
+`BankingContext.age` 에서 톤 프로필이 결정되고, 프롬프트/응답이 동적으로 조립됩니다.
+
+| 사용자 | 나이 | 톤 | 효과 |
+|--------|------|----|------|
+| 이병민 | 20대 | `young` | 간결, 가벼운 이모지 |
+| 박준혁 | 30대 (VIP·보안강화) | `standard` | 표준 존댓말 + 보안 경고 강화, 100만원↑ OTP 강제 |
+| 김은숙 | 60대 | `senior` | 금융용어 풀어쓰기("일일 한도(하루에 보낼 수 있는 최대 금액)"), 단계별 안내 |
+
+- LLM 키가 있으면 `build_polish_prompt()` 가 톤 지침이 담긴 시스템 프롬프트로 응답을 다듬고,
+- 키가 없어도 `apply_tone()` 의 결정론적 보정으로 동일한 정책이 적용됩니다.
+- 채팅 화면 우상단 드롭다운으로 사용자를 전환해 비교 시연하세요.
+
+---
+
+## 목업 데이터 (개인뱅킹 한정)
+
+앱 최초 실행 시 `seed.py` 가 자동 시드합니다. 법인/기업 수신자는 없습니다.
+
+| 항목 | 규모 | 비고 |
+|------|------|------|
+| 사용자 | 3명 | 나이 30/68/39세 — 톤 비교, VIP·보안강화 프로필 |
+| 계좌 | 6개 | 사용자별 주계좌+저축 |
+| 수신자 | 27명 | 가족/친구/모임/집주인 등 전부 개인 관계 |
+| 즐겨찾기 | 27건 | 동명이인 "민수" 2명 (모호성), "서연" (여친 학습 대상) |
+| 이체내역 | **121건 / 6개월** | 월세·관리비·용돈 월별 반복 패턴 + 비정기 더치페이류 |
+| 메모 | **약 10%만 채움** | 실제 앱 사용 패턴 반영 |
+| 정기이체 | 9건 | 월세/관리비/용돈/적금/PT/모임회비 등 |
+| 호칭 메모리 | 시드 1건 | 사용자3 "와이프"→최예린. 사용자1 "여친"은 **라이브 학습용으로 비움** |
+
+### 주요 데모 사용자: 이병민 (kimcs, 20대)
+
+주계좌 8,250,000원 — 일반 이체 / 잔액 부족(900만↑) / OTP(300만↑) 시나리오 커버.
+주요 수신자: 엄마(이순자), 아빠, 민수×2(모호성), 집주인(장태호), 김서연(여친 학습),
+룸메, 피티쌤, 동기모임, 할머니, 누나 등.
+
+---
+
+## 데모 시나리오 (카카오뱅크 AI이체 스타일 멀티턴)
+
+```
+A. 즐겨찾기 이체     "엄마에게 5만원 보내줘" → 확인 카드 → "확인" → ✅
+B. 동명이인 되묻기   "민수에게 5만원" → 후보 2명 제시 → "1" → 확인 카드
+                     (선택 결과가 학습되어 다음부터 즉시 해석)
+C. 호칭 학습         "여친한테 2만원 보내줘" → "누구신지 몰라요" → "김서연"
+                     → 새 세션에서도 '여친' 즉시 인식
+D. 금액 되묻기       "지연한테 보내줘" → "얼마를 보내드릴까요?" → "3만원"
+E. 확인 중 수정      확인 카드 상태에서 "아니 3만원으로 해줘" → 카드 갱신
+F. 확인 중 새 요청   확인 카드 상태에서 "잔고 얼마지?" → 이체 보류·Supervisor 재계획
+G. 병렬 fan-out      "잔고 보여주고 자주 보내는 사람도 추천해줘" → 2개 에이전트 동시 실행
+H. OTP 협업          "집주인한테 400만원" → Security 평가 → 확인 → OTP(123456) → ✅
+I. 자연어 메모       "지연한테 3만원 보내고 밥값이라고 적어줘" → 메모 자동 기입
+J. 정기이체 추론     "월세 보내야 하지?" → 금액/수신자 자동 완성
+K. 지난번처럼        "지난번처럼 보내줘" → 최근 이체 기반 확인 카드
+L. 한글 수사 금액    "만원만 보내줘", "오만원", "삼십만원" 인식
+M. 보안강화 고객     사용자3(박준혁)으로 "아버지한테 150만원" → 100만원↑ OTP 강제
+N. 시니어 말투       사용자2(김은숙)로 "잔고 보여줘" → 용어 풀어쓰기 응답
+```
+
+---
+
+## A2A (Agent-to-Agent) 표면
+
+내부적으로는 LangGraph `Command`/`Send` 핸드오프로, 외부적으로는 표준 Agent Card 로 노출됩니다.
+
+| 엔드포인트 | 설명 |
+|-----------|------|
+| `GET /.well-known/agent-card.json` | 대표 Agent Card (디스커버리) |
+| `GET /api/a2a/agents` | 4개 Sub-Agent 카드 목록 |
+| `POST /api/a2a/agents/<name>/invoke` | JSON-RPC `message/send` 스타일 원격 호출 |
+
+```bash
+# 앱 실행 후:
+python scripts/a2a_client_demo.py
+```
+
+transfer 에이전트는 Human-in-the-Loop(확인/OTP)가 필요하므로 단독 invoke 가 차단되고
+supervisor 경유로만 호출됩니다 — 금융 안전장치의 프로토콜 레벨 반영입니다.
 
 ---
 
 ## 빠른 시작
 
-### 1. 의존성 설치
-
 ```bash
 cd ai-banking-transfer-agent
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
+
+cp .env.example .env               # 선택 (기본값으로도 실행 가능)
+python app.py                      # http://localhost:8000
 ```
 
-### 2. 환경 변수 설정 (선택)
+첫 실행 시 SQLite DB 생성 + 데모 데이터 자동 시드. 구버전 스키마가 감지되면 자동 재생성됩니다.
+
+### LLM 모드 (선택)
+
+기본 제공자는 OpenAI 이지만 **키가 없으면 자동으로 결정론적 한국어 파서로 폴백**하므로
+키 없이 모든 기능이 동작합니다.
 
 ```bash
-cp .env.example .env
-# .env를 열어 필요한 값 수정 (기본값으로도 실행 가능)
-```
-
-### 3. 앱 실행
-
-```bash
-python app.py
-```
-
-또는
-
-```bash
-flask --app app run
-```
-
-첫 실행 시 자동으로 SQLite DB를 생성하고 데모 데이터를 시드합니다.
-
-브라우저에서 `http://localhost:5000` 접속.
-
-### 4. 시드 데이터 재생성
-
-```bash
-python seed.py
-```
-
-또는 앱 UI에서 **"데모 데이터 초기화"** 버튼을 누르세요.
-
----
-
-## LLM 모드 활성화 (선택)
-
-기본 모드는 **LLM 없이** 작동합니다. 키가 없어도 모든 기능이 동작합니다.
-
-LLM을 사용하려면 `.env`에서 설정:
-
-```bash
-# OpenAI
+# .env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
-# pip install langchain-openai
+OPENAI_MODEL=gpt-4o-mini
+```
 
-# Anthropic
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
-# pip install langchain-anthropic
+### 테스트
+
+```bash
+pytest tests/ -v                       # 44개 단위/통합 테스트
+python scripts/smoke_test.py           # 13개 멀티턴 시나리오 E2E
+python scripts/web_smoke.py            # 웹/A2A 레이어 검증
 ```
 
 ---
@@ -172,115 +269,13 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 | 페이지 | URL | 설명 |
 |--------|-----|------|
-| 채팅 | `/chat` | 한국어 대화형 이체 인터페이스 |
+| 채팅 | `/chat` | 대화형 이체 + **Supervisor 계획/협업 타임라인 패널** + 사용자 전환 |
 | 계좌/잔액 | `/accounts` | 계좌 목록, 잔액, 오늘의 이체 한도 |
-| 즐겨찾기 | `/favorites` | 저장된 수신자 및 AI 추천 순위 |
-| 자동이체 | `/recurring` | 월세·관리비·용돈 등 정기이체 목록 |
-| 이체내역 | `/history` | 완료/실패/취소 이체 기록 |
-| DB 뷰어 | `/admin/db-viewer` | 읽기 전용 SQLite 테이블 탐색기 |
-
----
-
-## LangGraph 워크플로우
-
-```mermaid
-flowchart TD
-    START([시작]) --> CI[classify_intent]
-
-    CI -->|transfer / clarification| ES[extract_slots]
-    CI -->|confirm_transfer| OTP{OTP 필요?}
-    CI -->|otp_response| VO[verify_otp]
-    CI -->|cancel_transfer| GR[generate_response]
-    CI -->|balance/history/rec/unknown| GR
-
-    ES --> RR[resolve_recipient]
-    RR -->|ambiguous| GR
-    RR -->|resolved| VA[validate]
-
-    VA -->|failed| GR
-    VA -->|passed| GR
-
-    OTP -->|yes| VO
-    OTP -->|no| ET[execute_transfer]
-
-    VO -->|ok| ET
-    VO -->|fail| GR
-
-    ET --> GR
-    GR --> END([종료])
-```
-
-### 그래프 상태 (TransferState)
-
-| 필드 | 설명 |
-|------|------|
-| `pending_state` | `none` / `awaiting_clarification` / `awaiting_confirmation` / `awaiting_otp` |
-| `candidate_recipients` | 모호한 수신자 후보 목록 |
-| `pending_transfer_data` | 확인 대기 중인 이체 요약 |
-| `validation_errors` | 결정론적 검증 오류 목록 |
-| `graph_trace` | 이번 턴에 실행된 노드 순서 |
-
-상태는 턴 사이에 `chat_sessions.state_json`에 JSON으로 직렬화되어 저장됩니다.
-
----
-
-## 데모 시나리오
-
-### 시나리오 A — 즐겨찾기 이체 성공
-```
-사용자: 엄마에게 5만원 보내줘
-에이전트: [확인 카드 표시: 이순자 / 한빛은행 / 50,000원 / 수수료 500원]
-사용자: 확인
-에이전트: ✅ 이체 완료! 이체 후 잔액: 2,797,000원
-```
-
-### 시나리오 B — 모호한 수신자
-```
-사용자: 민수에게 5만원 보내줘
-에이전트: '민수'가 2명입니다. 어느 분인가요?
-          1. 민수 — 새벽은행 ****7890
-          2. 민수 — 구름뱅크 ****8901
-사용자: 1
-에이전트: [확인 카드 표시: 박민수]
-```
-
-### 시나리오 C — 자동이체 제안
-```
-사용자: 월세 보내야 하지?
-에이전트: [확인 카드 표시: 집주인 장태호 / 하늘은행 / 550,000원]
-```
-
-### 시나리오 D — 지난번처럼
-```
-사용자: 지난번처럼 보내줘
-에이전트: [최근 이체 기록 참고 → 확인 카드 표시]
-```
-
-### 시나리오 E — 잔액 부족
-```
-사용자: 아빠한테 500만원 보내줘
-에이전트: ⚠️ 잔액이 부족합니다. 현재 잔액: 2,847,500원
-```
-
-### 시나리오 F — OTP 요청
-```
-사용자: 집주인한테 500만원 보내줘
-에이전트: [확인 카드] 🔒 300만원 이상 이체는 OTP 확인이 필요합니다.
-사용자: 123456
-에이전트: ✅ 이체 완료!
-```
-
-### 시나리오 G — 잔고 조회
-```
-사용자: 내 잔고 보여줘
-에이전트: 💰 주계좌: 2,847,500원 / 저축계좌: 5,250,000원
-```
-
-### 시나리오 H — 이체내역 조회
-```
-사용자: 최근 이체내역 보여줘
-에이전트: 📜 최근 이체 내역 [목록 표시]
-```
+| 즐겨찾기 | `/favorites` | 저장된 수신자 + **AI가 학습한 호칭** |
+| 자동이체 | `/recurring` | 정기이체 목록 |
+| 이체내역 | `/history` | 이체 기록 |
+| 에이전트 로그 | `/agent-logs/` | 실행별 계획/협업 타임라인/노드 시간 |
+| DB 뷰어 | `/admin/db-viewer` | 읽기 전용 테이블 탐색 (`alias_memories` 포함) |
 
 ---
 
@@ -288,82 +283,52 @@ flowchart TD
 
 ```
 ai-banking-transfer-agent/
-├── app.py                          # Flask 앱 팩토리 및 엔트리포인트
-├── config.py                       # 환경 변수 기반 설정
-├── seed.py                         # 데모 데이터 시드
-├── requirements.txt
-├── .env.example
+├── app.py / config.py / seed.py
+├── docs/개발수행계획서.md
+├── scripts/                       # smoke_test / web_smoke / a2a_client_demo
 │
 ├── src/
 │   ├── agents/
-│   │   └── transfer_agent/         # ← 재사용 가능한 에이전트 패키지
-│   │       ├── __init__.py         #   build_transfer_graph(), run_transfer_agent()
-│   │       ├── graph.py            #   LangGraph 그래프 정의
-│   │       ├── state.py            #   TypedDict 상태 정의
-│   │       ├── schemas.py          #   Pydantic 스키마
-│   │       ├── nodes/              #   그래프 노드 구현
-│   │       ├── services/           #   결정론적 비즈니스 로직
-│   │       └── prompts/            #   LLM 프롬프트 템플릿
-│   ├── models/
-│   │   └── database.py             #   SQLAlchemy ORM 모델
-│   └── web/
-│       └── routes/                 #   Flask 블루프린트
+│   │   ├── context.py             # ★ BankingContext (Runtime context_schema)
+│   │   ├── state.py               # BankingState (reducer 채널 — 병렬 안전)
+│   │   ├── supervisor/            # Leader Agent
+│   │   │   ├── graph.py           #   plan → Send fan-out → respond / 실행 진입점
+│   │   │   ├── planner.py         #   ExecutionPlan (LLM 구조화 출력 + rule 폴백)
+│   │   │   └── prompts.py         #   Dynamic Prompting (나이 톤 / 플래너 / 다듬기)
+│   │   ├── subagents/
+│   │   │   ├── transfer.py        #   interrupt 멀티턴 + 호칭 학습 + Security 협업
+│   │   │   ├── inquiry.py         #   잔액/내역/자동이체 (읽기 전용)
+│   │   │   ├── recommend.py       #   추천 (CachePolicy 노드 캐싱)
+│   │   │   └── security.py        #   사기탐지 룰 (협업/단독 겸용)
+│   │   ├── a2a/cards.py           #   Agent Card 정의
+│   │   └── common/                #   schemas / parsing / llm / tracing / services
+│   ├── models/database.py         # ORM (+ AliasMemory)
+│   └── web/routes/                # Flask 블루프린트 (+ a2a.py)
 │
-├── templates/                      # Jinja2 HTML 템플릿
-├── static/                         # CSS / JS
-└── tests/                          # pytest 테스트
+├── templates/ · static/           # UI (협업 가시화 패널 포함)
+└── tests/                         # pytest
 ```
 
 ---
 
 ## 향후 확장 경로
 
-### Slack 어댑터 추가
-`run_transfer_agent(user_id, message, session_id)` 함수는 Flask HTTP 요청에 의존하지 않습니다.
-Slack 이벤트 핸들러에서 동일하게 호출할 수 있습니다:
-
-```python
-from src.agents.transfer_agent import run_transfer_agent
-
-@slack_app.event("message")
-def handle_slack_message(event, say):
-    result = run_transfer_agent(
-        user_id=lookup_user(event["user"]),
-        message=event["text"],
-        session_id=event["channel"],
-    )
-    say(result["response_text"])
-```
-
-### 추가 AI 서비스 연결
-`src/agents/` 디렉토리에 새 에이전트 패키지(예: `loan_agent/`, `card_agent/`)를 추가하고,
-`classify_intent` 노드에서 라우팅 조건을 확장하면 됩니다.
-
-현재의 `_route_intent()` 함수에 새 분기를 추가하거나,
-상위 라우터 그래프에서 각 전문 에이전트로 위임하는 **멀티 에이전트** 패턴으로 확장할 수 있습니다.
-
----
-
-## 테스트 실행
-
-```bash
-pytest tests/ -v
-```
+- **새 도메인 에이전트 추가**: `src/agents/subagents/loan.py` 를 만들고
+  ① 서브그래프 노드로 등록, ② `a2a/cards.py` 에 카드 추가, ③ 플래너 매핑 한 줄 —
+  LLM 플래너는 카드 설명만으로 새 에이전트를 디스패치합니다.
+- **Slack 등 채널 어댑터**: `run_banking_agent(user_id, message, session_id)` 는
+  Flask 요청에 의존하지 않으므로 어떤 이벤트 핸들러에서도 호출 가능합니다.
+- **완전 분산 A2A**: 카드 스키마가 표준형이므로 `a2a-sdk` ASGI 서버로 각 에이전트를
+  독립 배포해도 Supervisor 쪽은 클라이언트 전환만 하면 됩니다.
 
 ---
 
 ## 기술 스택
 
-- **Python 3.11+**
-- **Flask 3** — 웹 프레임워크
-- **SQLAlchemy 2 + SQLite** — ORM 및 데이터베이스
-- **LangGraph 0.2** — 에이전트 오케스트레이션
-- **LangChain Core** — LLM 추상화 (선택)
-- **Pydantic v2** — 스키마 및 유효성 검사
-- **Bootstrap 5** — UI 스타일링
-- **pytest** — 테스트 프레임워크
-
----
+- **Python 3.11+** / **Flask 3** / **SQLAlchemy 2 + SQLite**
+- **LangGraph 1.1** — Runtime · Send · Command · interrupt · SqliteSaver · CachePolicy
+- **LangChain Core 1.x + langchain-openai** (선택, 폴백 내장)
+- **Pydantic v2** / **Bootstrap 5** / **pytest**
 
 ## 문의
 

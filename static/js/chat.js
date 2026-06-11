@@ -16,12 +16,49 @@ const CHAT_API   = "/api/chat/message";
 const RESET_API  = "/api/chat/reset";
 const DEMO_RESET = "/admin/reset-demo";
 
-const msgContainer = document.getElementById("chat-messages");
-const chatForm     = document.getElementById("chat-form");
-const chatInput    = document.getElementById("chat-input");
-const sendBtn      = document.getElementById("send-btn");
-const debugPanel   = document.getElementById("debug-panel");
-const tracePanel   = document.getElementById("trace-panel");
+const msgContainer  = document.getElementById("chat-messages");
+const chatForm      = document.getElementById("chat-form");
+const chatInput     = document.getElementById("chat-input");
+const sendBtn       = document.getElementById("send-btn");
+const debugPanel    = document.getElementById("debug-panel");
+const tracePanel    = document.getElementById("trace-panel");
+const planPanel     = document.getElementById("plan-panel");
+const activityPanel = document.getElementById("activity-panel");
+const userSelect    = document.getElementById("user-select");
+
+// 에이전트별 표시 색/이름
+const AGENT_META = {
+  supervisor: { label: "Supervisor", color: "#6f42c1" },
+  transfer:   { label: "Transfer",   color: "#0d6efd" },
+  inquiry:    { label: "Inquiry",    color: "#198754" },
+  recommend:  { label: "Recommend",  color: "#fd7e14" },
+  security:   { label: "Security",   color: "#dc3545" },
+};
+
+const EVENT_LABELS = {
+  plan: "실행 계획 수립",
+  respond: "응답 합성",
+  start: "이체 분석 시작",
+  resolved: "수신자 해석 완료",
+  clarified: "되묻기 해소",
+  alias_learned: "🧠 호칭 학습",
+  reinterpret: "답변 재해석",
+  security_consult: "→ Security 협업 의뢰",
+  assess_done: "리스크 평가 완료",
+  validated: "검증 통과",
+  validation_failed: "검증 실패",
+  amount_changed: "금액 수정",
+  otp_verified: "OTP 인증 성공",
+  otp_failed: "OTP 인증 실패",
+  executed: "✅ 이체 실행",
+  cancelled: "이체 취소",
+  handoff_to_supervisor: "↩ Supervisor 핸드오프",
+  balance_done: "잔액 조회 완료",
+  history_done: "내역 조회 완료",
+  recurring_done: "자동이체 조회 완료",
+  done: "추천 완료",
+  report_done: "보안 리포트 완료",
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -196,6 +233,69 @@ function updateDebugPanel(result) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Supervisor 계획 패널 — 리더 에이전트가 어떤 하위 에이전트를 부르는지 가시화
+// ─────────────────────────────────────────────────────────────────────────────
+
+function agentChip(agent) {
+  const meta = AGENT_META[agent] || { label: agent, color: "#6c757d" };
+  return `<span class="badge" style="background:${meta.color};font-size:11px;">${meta.label}</span>`;
+}
+
+function updatePlanPanel(plan) {
+  if (!plan) {
+    planPanel.innerHTML = '<span class="text-muted" style="font-size:12px;">—</span>';
+    return;
+  }
+  const steps = plan.steps || [];
+  let html = `
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <span style="font-size:12px;">${agentChip("supervisor")}
+        <span class="text-muted">planner: ${escapeHtml(plan.planner || "rule")}</span></span>
+      ${plan.parallel ? '<span class="badge bg-info" style="font-size:10px;">⚡ 병렬 실행</span>' : ""}
+    </div>`;
+
+  if (!steps.length) {
+    html += '<div class="text-muted" style="font-size:12px;">호출할 하위 에이전트 없음 (직접 응답)</div>';
+  } else {
+    html += steps.map(s => `
+      <div class="border rounded p-1 mb-1" style="font-size:12px;">
+        ${agentChip(s.agent)} <code style="font-size:11px;">${escapeHtml(s.sub_intent)}</code>
+        <div class="text-muted" style="font-size:11px;">${escapeHtml(s.reason || "")}</div>
+      </div>`).join("");
+  }
+  planPanel.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 에이전트 협업 타임라인
+// ─────────────────────────────────────────────────────────────────────────────
+
+function updateActivityPanel(activity) {
+  if (!activity || !activity.length) {
+    activityPanel.innerHTML = '<span class="text-muted" style="font-size:12px;">—</span>';
+    return;
+  }
+  const rows = activity.map(a => {
+    const label = EVENT_LABELS[a.event] || a.event;
+    const detail = a.detail || {};
+    let extra = "";
+    if (detail.note) extra = escapeHtml(detail.note);
+    else if (detail.name) extra = escapeHtml(detail.name);
+    else if (detail.risk_score !== undefined) extra = `위험도 ${detail.risk_score}점 (${detail.level})`;
+    else if (detail.steps) extra = detail.steps.map(s => s.agent).join(" + ");
+    else if (detail.new_amount) extra = formatKRW(detail.new_amount);
+    return `
+      <div class="d-flex align-items-start gap-1 mb-1" style="font-size:12px;">
+        <span class="text-muted" style="font-size:10px;min-width:52px;">${escapeHtml(a.ts || "")}</span>
+        ${agentChip(a.agent)}
+        <span>${escapeHtml(label)}${extra ? ` <span class="text-muted">· ${extra}</span>` : ""}</span>
+      </div>`;
+  }).join("");
+  activityPanel.innerHTML = rows;
+  activityPanel.scrollTop = activityPanel.scrollHeight;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Update graph trace panel
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -235,6 +335,8 @@ async function sendMessage(text) {
 
     updateDebugPanel(result);
     updateTracePanel(result.graph_trace || []);
+    updatePlanPanel(result.plan);
+    updateActivityPanel(result.agent_activity || []);
 
     const rtype = result.response_type || "message";
     const rtext = result.response_text || "";
@@ -274,6 +376,18 @@ chatForm.addEventListener("submit", e => {
 document.querySelectorAll(".sample-btn").forEach(btn => {
   btn.addEventListener("click", () => sendMessage(btn.dataset.msg));
 });
+
+// 데모 사용자 전환 (나이 기반 맞춤 말투 시연)
+if (userSelect) {
+  userSelect.addEventListener("change", async () => {
+    const resp = await fetch("/api/chat/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: Number(userSelect.value) }),
+    });
+    if (resp.ok) location.reload();
+  });
+}
 
 // Reset chat (clears session state, not DB)
 document.getElementById("btn-reset-chat").addEventListener("click", async () => {

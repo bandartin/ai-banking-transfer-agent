@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, render_template, request
+﻿from flask import Blueprint, current_app, render_template, request
 from src.models.database import db, TransferHistory, Recipient, Account
 
 bp = Blueprint("history", __name__)
@@ -6,7 +6,8 @@ bp = Blueprint("history", __name__)
 
 @bp.route("/history")
 def history():
-    user_id = current_app.config["DEMO_USER_ID"]
+    from src.web.routes.chat import current_user_id
+    user_id = current_user_id()
     page = request.args.get("page", 1, type=int)
     per_page = 20
     status_filter = request.args.get("status", "")
@@ -53,3 +54,4 @@ def history():
         total=total,
         status_filter=status_filter,
     )
+
