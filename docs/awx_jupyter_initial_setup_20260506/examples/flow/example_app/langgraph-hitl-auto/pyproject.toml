@@ -1,0 +1,22 @@
+[project]
+name = "langgraph-hitl-auto"
+version = "0.1.0"
+description = "Minimal LangGraph human-in-the-loop example with OTEL trace continuity"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "langgraph",
+    "gradio",
+    "openai",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-httpx",
+    "opentelemetry-instrumentation-openai",
+    "opentelemetry-instrumentation-logging",
+    "opentelemetry-distro[otlp]",
+]

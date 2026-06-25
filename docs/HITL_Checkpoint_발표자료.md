@@ -36,10 +36,6 @@ sequenceDiagram
     Graph-->>Flask: success response
 ```
 
-발표 멘트:
-
-> 사용자가 처음 “이체해줘”라고 말하면 그래프는 수신자 확인, 금액 검증, 보안 검토를 지나 확인 카드에서 멈춥니다. 이때 멈춘 위치와 State가 SqliteSaver에 저장됩니다. 다음 요청에서 같은 `thread_id`로 조회하면 LangGraph는 “이 사람은 지금 confirm 단계에서 답을 기다리는 중”이라는 것을 압니다. 그래서 새로 `plan`부터 시작하지 않고 `Command(resume="확인")`으로 방금 멈춘 `interrupt()`의 반환값에 “확인”을 꽂아 넣습니다.
-
 ---
 
 ## 2. SqliteSaver가 무엇인가?
@@ -95,10 +91,6 @@ Checkpointer interface
 | `AsyncSqliteSaver` | SQLite 파일 | async 앱에서 가벼운 영속 저장 |
 | `PostgresSaver` | PostgreSQL | 운영 환경, 다중 서버, 중앙 DB |
 | `AsyncPostgresSaver` | PostgreSQL | async 운영 환경 |
-
-발표 멘트:
-
-> Checkpointer는 역할이고, Saver는 저장 방식입니다. LangGraph는 "checkpoint를 저장하고 조회한다"는 공통 규격을 갖고 있고, 우리는 그중 SQLite에 저장하는 구현체인 `SqliteSaver`를 선택했습니다. 나중에 운영 환경으로 가면 같은 개념을 PostgreSQL saver로 바꿀 수 있습니다.
 
 ### 왜 SqliteSaver를 쓰는가?
 
@@ -196,10 +188,6 @@ flowchart TD
     I -- "아니오" --> K["fresh_turn_state로 새 턴"]
 ```
 
-발표 멘트:
-
-> Checkpoint는 단순히 대화 내용을 저장하는 history가 아닙니다. LangGraph가 다음 실행을 결정할 수 있도록 state 값, channel version, node가 이미 본 version, 다음 task 정보를 함께 저장합니다. 그래서 같은 `thread_id`로 돌아오면 "이전 대화가 있었다" 정도가 아니라 "어느 node에서 멈췄고 다음에 무엇을 실행해야 하는지"까지 복원됩니다.
-
 ### SqliteSaver의 실제 테이블 감각
 
 `SqliteSaver`는 내부적으로 SQLite에 필요한 테이블을 만듭니다. 공식 구현 기준으로 핵심 테이블은 다음 두 개입니다.
@@ -284,10 +272,6 @@ config = {"configurable": {"thread_id": f"{user_id}:{session_id}"}}
 2:8e2c...  -> 2번 사용자의 A 채팅 세션
 ```
 
-발표 멘트:
-
-> `thread_id`는 LangGraph가 쓰는 “대화 흐름의 주소”입니다. 다만 그 주소를 어떤 문자열로 만들지는 애플리케이션이 정합니다. 우리는 사용자가 바뀌거나 채팅 세션이 바뀌면 checkpoint timeline도 분리되도록 `user_id:session_id`를 사용했습니다.
-
 주의할 점:
 
 - 같은 대화를 이어가려면 같은 `session_id`가 유지되어야 합니다.
@@ -354,10 +338,6 @@ has_pending = bool(snapshot.next)
 next가 비어 있음     -> 그래프가 끝난 상태. 새 턴으로 시작해도 됨.
 next가 남아 있음     -> interrupt 등으로 중간에 멈춘 상태. resume 해야 함.
 ```
-
-발표 멘트:
-
-> `get_state()`는 “지금 이 세션이 어디까지 진행됐지?”를 LangGraph에게 물어보는 것입니다. 우리는 그중에서도 `snapshot.next`만 보고, 기다리는 node가 있으면 사용자 입력을 새 요청으로 보지 않고 resume 값으로 취급합니다.
 
 ---
 
@@ -427,10 +407,6 @@ LangGraph checkpointer가 SQLite에 직렬화 저장  O
 ```
 
 즉 "우리가 보기 좋은 JSON으로 전부 저장한다"기보다는 "LangGraph가 StateSnapshot과 writes를 SQLite BLOB 형태로 직렬화해 저장한다"가 더 정확합니다.
-
-발표 멘트:
-
-> State는 Flask session이나 브라우저 localStorage에 저장되는 것이 아닙니다. `BankingState`의 값과 실행 메타정보가 LangGraph checkpointer를 통해 SQLite에 저장됩니다. 우리는 JSON 저장/로드 코드를 직접 작성하지 않고, LangGraph의 checkpoint API를 사용합니다.
 
 ---
 
@@ -534,10 +510,6 @@ if parsing.is_confirmation(reply):
     return Command(goto="otp" if requires_otp else "execute")
 ```
 
-발표 멘트:
-
-> `Command(resume=...)`는 새 출발 명령이 아니라 “아까 멈춘 질문에 대한 답변”입니다. 확인 카드에서 멈췄다면 resume 값은 확인 카드의 답변이 됩니다. OTP에서 멈췄다면 resume 값은 OTP 입력값이 됩니다.
-
 ---
 
 ## 10. 이전 Node들은 왜 스킵되는가?
@@ -599,10 +571,6 @@ return Command(
     },
 )
 ```
-
-발표 멘트:
-
-> 확인 대기 중이라고 해서 모든 입력을 무조건 “확인 카드의 답변”으로만 해석하지 않습니다. “잔고 얼마야?”처럼 새 요청이면 TransferAgent가 부모 Supervisor에게 “이건 내가 처리하던 이체 답변이 아니라 새 요청이니 다시 planning 해줘”라고 넘깁니다.
 
 ---
 
@@ -685,10 +653,6 @@ result = graph.invoke(graph_input, config=config, context=ctx)
 | `Command(resume=...)` | 고객이 다시 와서 “확인입니다”라고 답함 |
 | `snapshot.next` | 파일철에 붙은 “다음은 confirm부터” 포스트잇 |
 | `SqliteSaver` | 파일철을 보관하는 캐비닛 |
-
-발표 멘트:
-
-> 이 구조의 재미있는 점은 챗봇이 기억력이 좋은 척하는 것이 아니라, 실제로 업무 파일철을 저장한다는 점입니다. 사용자가 “확인”이라고 말했을 때 AI가 눈치로 앞 상황을 추측하는 게 아니라, LangGraph가 “이 thread는 confirm node에서 멈춰 있었다”는 실행 상태를 가지고 이어갑니다.
 
 ---
 

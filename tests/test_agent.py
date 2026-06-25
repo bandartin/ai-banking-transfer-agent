@@ -123,6 +123,56 @@ class TestTransferMultiTurn:
             assert r["response_data"]["amount"] == 550_000
             run_banking_agent(1, "취소", session_id=sid)
 
+    def test_bank_hint_disambiguates_recipient(self, app):
+        """은행 힌트가 동명이인 후보를 좁힌다."""
+        sid = SESSION_ID + "-bank-hint"
+        with app.app_context():
+            r = run_banking_agent(1, "구름뱅크 민수에게 5만원 보내줘", session_id=sid)
+            assert r["pending_state"] == "awaiting_confirmation"
+            assert r["response_data"]["recipient_name"] == "이민수"
+            assert r["debug_info"]["extracted_slots"]["bank_hint"] == "구름뱅크"
+            run_banking_agent(1, "취소", session_id=sid)
+
+    def test_source_account_hint_selects_account(self, app):
+        """출금계좌 힌트가 이체 요약의 출금 계좌에 반영된다."""
+        sid = SESSION_ID + "-source-hint"
+        with app.app_context():
+            r = run_banking_agent(1, "비상금통장에서 엄마에게 5만원 보내줘", session_id=sid)
+            assert r["pending_state"] == "awaiting_confirmation"
+            assert r["response_data"]["source_account_name"] == "비상금통장"
+            assert r["debug_info"]["extracted_slots"]["source_account_hint"] == "비상금통장"
+            run_banking_agent(1, "취소", session_id=sid)
+
+    def test_recommendation_followup_transfer_by_number(self, app):
+        """추천 목록 조회 후 '1번'을 다음 턴 이체 수신자로 참조한다."""
+        sid = SESSION_ID + "-rec-followup"
+        with app.app_context():
+            r1 = run_banking_agent(1, "자주 보내는 사람 추천해줘", session_id=sid)
+            assert r1["response_type"] == "recommendation"
+            first = r1["response_data"]["recommendations"][0]
+
+            r2 = run_banking_agent(1, "1번한테 3만원 보내줘", session_id=sid)
+            assert r2["pending_state"] == "awaiting_confirmation"
+            assert r2["response_data"]["amount"] == 30_000
+            assert r2["response_data"]["recipient_name"] == first["name"]
+
+            run_banking_agent(1, "취소", session_id=sid)
+
+    def test_history_followup_retransfer_by_number(self, app):
+        """최근 이체내역 조회 후 '1번 내역대로' 재송금한다."""
+        sid = SESSION_ID + "-hist-followup"
+        with app.app_context():
+            r1 = run_banking_agent(1, "최근 이체내역 보여줘", session_id=sid)
+            assert r1["response_type"] == "history"
+            first = r1["response_data"]["history"][0]
+
+            r2 = run_banking_agent(1, "1번 내역대로 다시 보내줘", session_id=sid)
+            assert r2["pending_state"] == "awaiting_confirmation"
+            assert r2["response_data"]["amount"] == first["amount"]
+            assert r2["response_data"]["recipient_name"] == first["name"]
+
+            run_banking_agent(1, "취소", session_id=sid)
+
 
 class TestAliasMemory:
     """호칭 학습 — 되묻기로 해소된 호칭이 세션을 넘어 기억된다."""

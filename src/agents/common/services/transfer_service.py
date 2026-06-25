@@ -1,35 +1,28 @@
-"""
-Deterministic transfer business logic (Flask-free).
+"""Deterministic transfer business logic (Flask-free).
 
-수수료/OTP 임계값 등 정책 값은 current_app 이 아니라 BankingContext 로 주입받는다.
-LLM 은 이 모듈의 어떤 결정에도 관여하지 않는다.
+LLM is never allowed to decide balances, limits, fees, authentication, or
+execution.  This module assembles deterministic transfer summaries and delegates
+authoritative validation/execution to the configured integration adapter.
+
+Default local behavior is unchanged because `MockBankingAdapter` still uses the
+current SQLAlchemy demo schema.  In an IBK deployment the adapter can be swapped
+for API/MCI/ESB calls without rewriting the LangGraph workflow.
 """
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from typing import Optional
 
-from src.models.database import (
-    db,
-    Account,
-    AuditLog,
-    Favorite,
-    Recipient,
-    TransferHistory,
-)
 from src.agents.context import BankingContext
-from src.agents.common.schemas import (
-    TransferSummary,
-    ValidationResult,
-    TransferResult,
-)
+from src.agents.common.schemas import TransferResult, TransferSummary, ValidationResult
 from src.agents.common.services.balance_service import (
+    find_account_by_hint,
+    get_all_accounts,
     get_primary_account,
-    get_transfer_limit,
-    _maybe_reset_daily,
 )
+from src.integrations import get_banking_adapter
+from src.integrations.dtos import TransferExecutionRequest
+from src.models.database import Account, db
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,9 +48,21 @@ def build_transfer_summary(
     recipient_data: dict,
     amount: int,
     memo: Optional[str] = None,
+    source_account_id: Optional[int] = None,
 ) -> Optional[TransferSummary]:
-    """Assemble a TransferSummary from resolved data, ready for validation."""
-    source_account = get_primary_account(user_id)
+    """Assemble a `TransferSummary` from resolved deterministic data.
+
+    In production the account row returned by the adapter should represent an
+    authoritative observation from IBK's account inquiry system.  This function
+    only formats that observation into the shape needed by the confirmation
+    card and downstream validation.
+    """
+    if source_account_id:
+        source_account = db.session.get(Account, source_account_id)
+        if source_account and (source_account.user_id != user_id or not source_account.is_active):
+            source_account = None
+    else:
+        source_account = get_primary_account(user_id)
     if not source_account:
         return None
 
@@ -83,163 +88,47 @@ def build_transfer_summary(
     )
 
 
+def resolve_source_account(user_id: int, hint: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    """Resolve a source account hint to an account id.
+
+    The return contract intentionally stays `(account_id, error_message)` so the
+    existing TransferAgent can continue to decide whether to continue or show a
+    user-facing error.
+    """
+    if not hint:
+        return None, None
+
+    account = find_account_by_hint(user_id, hint)
+    if account:
+        return account.id, None
+
+    available = ", ".join(f"{a.account_name}({a.account_type})" for a in get_all_accounts(user_id))
+    return None, f"'{hint}'에 해당하는 출금 계좌를 찾지 못했습니다. 사용 가능한 계좌: {available}"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Pre-validation (deterministic — no LLM)
+# Pre-validation and execution
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 def validate_transfer(user_id: int, summary: TransferSummary) -> ValidationResult:
-    """Run all pre-transfer checks.  Returns a ValidationResult."""
-    errors = []
-    warnings = []
-
-    # 1. Source account active
-    account = db.session.get(Account, summary.source_account_id)
-    if not account or not account.is_active:
-        errors.append("출금 계좌가 비활성 상태입니다.")
-        return ValidationResult(passed=False, errors=errors)
-
-    # 2. Sufficient balance
-    if account.balance < summary.total_deducted:
-        shortage = summary.total_deducted - account.balance
-        errors.append(
-            f"잔액이 부족합니다. "
-            f"필요 금액: {_fmt(summary.total_deducted)}원, "
-            f"현재 잔액: {_fmt(account.balance)}원 "
-            f"(부족액: {_fmt(shortage)}원)"
-        )
-
-    # 3. Single transfer limit
-    tl = get_transfer_limit(user_id)
-    if tl and summary.amount > tl.single_transfer_limit:
-        errors.append(
-            f"1회 이체 한도를 초과했습니다. "
-            f"요청: {_fmt(summary.amount)}원, "
-            f"한도: {_fmt(tl.single_transfer_limit)}원"
-        )
-
-    # 4. Daily limit
-    if tl:
-        remaining = tl.daily_limit - tl.daily_used
-        if summary.amount > remaining:
-            errors.append(
-                f"일일 이체 한도를 초과했습니다. "
-                f"오늘 남은 한도: {_fmt(remaining)}원, "
-                f"요청: {_fmt(summary.amount)}원"
-            )
-
-    # 5. Minimum amount
-    if summary.amount <= 0:
-        errors.append("이체 금액은 0원보다 커야 합니다.")
-
-    # Warnings
-    if summary.remaining_balance < 10_000:
-        warnings.append("이체 후 잔액이 1만원 미만이 됩니다.")
-
-    return ValidationResult(
-        passed=len(errors) == 0,
-        errors=errors,
-        warnings=warnings,
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Transfer execution (atomic DB transaction)
-# ─────────────────────────────────────────────────────────────────────────────
+    """Run all pre-transfer checks through the configured banking adapter."""
+    return get_banking_adapter().validate_transfer(user_id, summary)
 
 
 def execute_transfer(
     user_id: int,
     summary: TransferSummary,
     favorite_id: Optional[int] = None,
+    execution_request: TransferExecutionRequest | None = None,
 ) -> TransferResult:
-    """
-    Execute the transfer atomically.
-
-    Steps inside a single DB transaction:
-      1. Deduct balance from source account
-      2. Insert TransferHistory record
-      3. Update TransferLimit daily_used
-      4. Update Favorite.send_count / last_sent_at
-      5. Insert AuditLog entry
-    """
-    try:
-        account = db.session.get(Account, summary.source_account_id)
-        if not account:
-            return TransferResult(success=False, error_message="출금 계좌를 찾을 수 없습니다.")
-
-        recipient = (
-            db.session.query(Recipient)
-            .filter(
-                Recipient.account_number == summary.recipient_account,
-                Recipient.bank_name == summary.recipient_bank,
-            )
-            .first()
-        )
-        if not recipient:
-            return TransferResult(success=False, error_message="수신 계좌 정보를 확인할 수 없습니다.")
-
-        # 1. Deduct balance
-        account.balance -= summary.total_deducted
-
-        # 2. Create history record
-        th = TransferHistory(
-            user_id=user_id,
-            source_account_id=summary.source_account_id,
-            recipient_id=recipient.id,
-            favorite_id=favorite_id,
-            amount=summary.amount,
-            fee=summary.fee,
-            memo=summary.memo,
-            status="completed",
-            transferred_at=datetime.utcnow(),
-        )
-        db.session.add(th)
-
-        # 3. Update daily limit used
-        tl = get_transfer_limit(user_id)
-        if tl:
-            _maybe_reset_daily(tl)
-            tl.daily_used += summary.amount
-
-        # 4. Update favorite stats
-        if favorite_id:
-            fav = db.session.get(Favorite, favorite_id)
-            if fav:
-                fav.send_count = (fav.send_count or 0) + 1
-                fav.last_sent_at = datetime.utcnow()
-
-        # 5. Audit log
-        audit = AuditLog(
-            user_id=user_id,
-            action="transfer_executed",
-            entity_type="transfer_history",
-            details_json=json.dumps(
-                {
-                    "summary": summary.model_dump(),
-                    "favorite_id": favorite_id,
-                },
-                ensure_ascii=False,
-                default=str,
-            ),
-        )
-        db.session.add(audit)
-
-        db.session.commit()
-        db.session.refresh(account)
-
-        return TransferResult(
-            success=True,
-            transfer_id=th.id,
-            new_balance=account.balance,
-        )
-
-    except Exception as exc:
-        db.session.rollback()
-        return TransferResult(
-            success=False,
-            error_message=f"이체 처리 중 오류가 발생했습니다: {exc}",
-        )
+    """Execute or dry-run the transfer through the configured banking adapter."""
+    return get_banking_adapter().execute_transfer(
+        user_id,
+        summary,
+        favorite_id=favorite_id,
+        execution_request=execution_request,
+    )
 
 
 def _fmt(amount: int) -> str:

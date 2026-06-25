@@ -31,6 +31,8 @@ def recommend_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
                 "text": "추천할 수신자 정보가 없습니다.",
                 "data": {"recommendations": []},
             }],
+            "last_recommendations": [],
+            "last_followup_source": "recommendations",
             "agent_activity": [activity("recommend", "done", {"count": 0})],
         }
 
@@ -47,6 +49,8 @@ def recommend_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
             "text": "\n".join(lines),
             "data": {"recommendations": rec_list},
         }],
+        "last_recommendations": rec_list,
+        "last_followup_source": "recommendations",
         "agent_activity": [activity("recommend", "done", {"count": len(rec_list)})],
     }
 

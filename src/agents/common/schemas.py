@@ -4,7 +4,7 @@ Pydantic schemas — structured extraction, planning, validation, API contracts.
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -13,7 +13,16 @@ from pydantic import BaseModel, Field
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-AgentName = Literal["transfer", "inquiry", "recommend", "security"]
+AgentName = Literal[
+    "transfer",
+    "inquiry",
+    "recommend",
+    "security",
+    "menu_search",
+    "product_guide",
+    "financial_calculator",
+    "tool_agent",
+]
 
 
 class PlanStep(BaseModel):
@@ -23,7 +32,8 @@ class PlanStep(BaseModel):
     sub_intent: str = Field(
         description=(
             "에이전트 내 세부 작업: inquiry→balance|history|recurring, "
-            "recommend→recipients, security→report, transfer→transfer"
+            "recommend→recipients, security→report, transfer→transfer, "
+            "menu_search→menu, product_guide→guide, financial_calculator→calculate"
         )
     )
     reason: str = Field("", description="이 에이전트를 선택한 이유 (가시화용)")
@@ -47,12 +57,20 @@ class ExecutionPlan(BaseModel):
 class ExtractedSlots(BaseModel):
     """Slots extracted from a single user utterance."""
 
+    raw_amount_text: Optional[str] = Field(None, description="원문 금액 표현")
+    recipient_text: Optional[str] = Field(None, description="원문 수신자 표현")
     recipient_alias: Optional[str] = Field(None, description="수신자 별칭 (엄마, 여친, 민수 등)")
     amount: Optional[int] = Field(None, description="이체 금액 (KRW 정수)")
     memo: Optional[str] = Field(None, description="이체 메모")
     use_last_transfer: bool = Field(False, description="'지난번처럼' 패턴 감지 여부")
     recurring_hint: Optional[str] = Field(None, description="반복이체 키워드 (월세, 관리비 등)")
     bank_hint: Optional[str] = Field(None, description="수신 은행 힌트")
+    source_account_hint: Optional[str] = Field(None, description="출금 계좌 힌트")
+    confidence: float = Field(1.0, ge=0.0, le=1.0, description="슬롯 추출 신뢰도")
+    ambiguous_fields: List[str] = Field(default_factory=list, description="불확실하거나 교차검증이 필요한 필드")
+    missing_fields: List[str] = Field(default_factory=list, description="이체 실행에 필요한데 누락된 필드")
+    evidence: Dict[str, str] = Field(default_factory=dict, description="슬롯별 근거가 된 원문 조각")
+    extraction_method: str = Field("rule", description="'rule' | 'llm' | 'llm+rule_cross_check'")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +136,8 @@ class TransferResult(BaseModel):
 
 class RecipientRecommendation(BaseModel):
     rank: int
+    favorite_id: Optional[int] = None
+    recipient_id: Optional[int] = None
     alias: Optional[str]
     name: str
     bank_name: str

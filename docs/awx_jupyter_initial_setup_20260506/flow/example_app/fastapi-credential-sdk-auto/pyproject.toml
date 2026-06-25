@@ -1,0 +1,16 @@
+[project]
+name = "fastapi-credential-sdk-auto"
+version = "0.1.0"
+description = "Minimal FastAPI example for AWX credential lookup"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "openai>=1.0.0",
+    "awx-core",
+    "awx-resources",
+    "awx-observability",
+]
+
+[tool.uv]
+package = false

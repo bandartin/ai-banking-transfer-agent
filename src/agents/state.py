@@ -50,11 +50,20 @@ class BankingState(TypedDict, total=False):
     memo: Annotated[Optional[str], _replace]
     use_last_transfer: Annotated[bool, _replace]
     recurring_hint: Annotated[Optional[str], _replace]
+    bank_hint: Annotated[Optional[str], _replace]
+    source_account_hint: Annotated[Optional[str], _replace]
+    source_account_id: Annotated[Optional[int], _replace]
     resolved_recipient_id: Annotated[Optional[int], _replace]
     resolved_favorite_id: Annotated[Optional[int], _replace]
     alias_learned_from: Annotated[Optional[str], _replace]  # 학습된 호칭 (예: "여친")
     candidate_recipients: Annotated[List[Dict[str, Any]], _replace]  # 되묻기 후보
     clarify_mode: Annotated[str, _replace]  # "ambiguity" | "unknown_alias" | "ask_recipient"
+
+    # ── Short-term follow-up memory (직전 조회/추천 결과 참조) ───────────────
+    last_recommendations: Annotated[List[Dict[str, Any]], _replace]
+    last_history_items: Annotated[List[Dict[str, Any]], _replace]
+    last_balance_summary: Annotated[Optional[Dict[str, Any]], _replace]
+    last_followup_source: Annotated[str, _replace]  # "recommendations" | "history" | "balance"
 
     # ── 검증/보안/실행 결과 ──────────────────────────────────────────────────
     pending_transfer_data: Annotated[Optional[Dict[str, Any]], _replace]
@@ -91,6 +100,9 @@ def fresh_turn_state(user_id: int, session_id: str, message: str) -> BankingStat
         memo=None,
         use_last_transfer=False,
         recurring_hint=None,
+        bank_hint=None,
+        source_account_hint=None,
+        source_account_id=None,
         resolved_recipient_id=None,
         resolved_favorite_id=None,
         alias_learned_from=None,

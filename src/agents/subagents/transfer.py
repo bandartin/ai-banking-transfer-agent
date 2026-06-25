@@ -26,6 +26,7 @@ TransferAgent — 자연어 이체 Sub-Agent.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Literal, Optional
 
@@ -43,8 +44,10 @@ from src.agents.common.services import alias_service, recipient_service
 from src.agents.common.services.transfer_service import (
     build_transfer_summary,
     execute_transfer,
+    resolve_source_account,
     validate_transfer,
 )
+from src.integrations.dtos import TransferExecutionRequest
 from src.agents.supervisor.prompts import build_slot_prompt
 
 
@@ -100,9 +103,107 @@ def _select_candidate(reply: str, candidates: list[dict]) -> Optional[dict]:
     return None
 
 
+def _ordinal_from_text(text: str) -> Optional[int]:
+    text = text.strip()
+    m = re.search(r"(\d+)\s*(?:번|번째)", text)
+    if m:
+        return int(m.group(1))
+
+    ordinal_patterns = [
+        (r"첫\s*(?:번|번째|째)", 1),
+        (r"(?:두|둘)\s*(?:번|번째|째)", 2),
+        (r"(?:세|셋)\s*(?:번|번째|째)", 3),
+        (r"(?:네|넷)\s*(?:번|번째|째)", 4),
+        (r"다섯\s*(?:번|번째|째)", 5),
+    ]
+    for pattern, idx in ordinal_patterns:
+        if re.search(pattern, text):
+            return idx
+
+    if re.search(r"그\s*사람|그분|방금|추천한\s*사람|내역대로|그대로", text):
+        return 1
+    return None
+
+
+def _select_followup_item(state: dict) -> tuple[Optional[dict], str]:
+    """Resolve short follow-up references like '1번' against recent read results."""
+    message = state.get("current_message", "")
+    alias = state.get("recipient_alias") or ""
+    idx = _ordinal_from_text(f"{message} {alias}")
+    if not idx:
+        return None, ""
+
+    recommendations = state.get("last_recommendations") or []
+    history_items = state.get("last_history_items") or []
+    source = state.get("last_followup_source") or ""
+
+    if re.search(r"추천|보낼\s*만한", message):
+        source = "recommendations"
+    elif re.search(r"내역|거래|기록|다시|그대로|내역대로", message):
+        source = "history"
+
+    if source == "history" and idx <= len(history_items):
+        return history_items[idx - 1], "history"
+    if source == "recommendations" and idx <= len(recommendations):
+        return recommendations[idx - 1], "recommendations"
+    if idx <= len(recommendations):
+        return recommendations[idx - 1], "recommendations"
+    if idx <= len(history_items):
+        return history_items[idx - 1], "history"
+    return None, ""
+
+
+def _filter_by_bank_hint(candidates: list[dict], bank_hint: Optional[str]) -> list[dict]:
+    if not bank_hint:
+        return candidates
+    hint = bank_hint.strip().lower()
+    matched = [c for c in candidates if hint in (c.get("bank_name") or "").lower()]
+    return matched or candidates
+
+
+def _amount_from_balance_reference(message: str, summary: Optional[dict]) -> Optional[int]:
+    if not summary or not re.search(r"가능한\s*만큼|남은\s*한도|최대한|최대\s*금액", message):
+        return None
+
+    candidates = [
+        summary.get("daily_remaining"),
+        summary.get("single_transfer_limit"),
+    ]
+    accounts = summary.get("accounts") or []
+    primary = next((a for a in accounts if a.get("is_primary")), accounts[0] if accounts else None)
+    if primary:
+        candidates.append(primary.get("balance"))
+
+    positive = [int(v) for v in candidates if isinstance(v, int) and v > 0]
+    return min(positive) if positive else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Node 1 — extract: 슬롯 추출 (LLM 이해, 결정론 폴백)
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+@traced("transfer", "entry")
+def entry_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Literal["confirm", "extract"]]:
+    if state.get("sub_intent") == "confirm_prepared_transfer" and state.get("pending_transfer_data"):
+        data = state.get("pending_transfer_data") or {}
+        return Command(
+            goto="confirm",
+            update={
+                "agent_activity": [
+                    activity(
+                        "transfer",
+                        "prepared_confirmation",
+                        {
+                            "source": "tool_agent",
+                            "amount": data.get("amount"),
+                            "recipient": data.get("recipient_name"),
+                        },
+                    )
+                ]
+            },
+        )
+    return Command(goto="extract")
 
 
 @traced("transfer", "extract")
@@ -111,16 +212,28 @@ def extract_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
     message = state.get("current_message", "")
 
     known = [m["alias"] for m in alias_service.list_for_user(ctx.user_id)]
-    slots = llm_helper.extract_slots(ctx, message, build_slot_prompt(ctx, known))
+    followup_memory = {
+        "last_recommendations": state.get("last_recommendations", []),
+        "last_history_items": state.get("last_history_items", []),
+        "last_balance_summary": state.get("last_balance_summary"),
+    }
+    slots = llm_helper.extract_slots(ctx, message, build_slot_prompt(ctx, known, followup_memory))
+    amount = slots.amount or _amount_from_balance_reference(message, state.get("last_balance_summary"))
+    slot_debug = slots.model_dump()
+    if amount and amount != slots.amount:
+        slot_debug["amount"] = amount
+        slot_debug["amount_source"] = "last_balance_summary"
 
     return {
         "recipient_alias": slots.recipient_alias,
-        "amount": slots.amount,
+        "amount": amount,
         "memo": slots.memo,
         "use_last_transfer": slots.use_last_transfer,
         "recurring_hint": slots.recurring_hint,
-        "debug_info": {**state.get("debug_info", {}), "extracted_slots": slots.model_dump()},
-        "agent_activity": [activity("transfer", "start", {"slots": slots.model_dump(exclude_none=True)})],
+        "bank_hint": slots.bank_hint,
+        "source_account_hint": slots.source_account_hint,
+        "debug_info": {**state.get("debug_info", {}), "extracted_slots": slot_debug},
+        "agent_activity": [activity("transfer", "start", {"slots": {k: v for k, v in slot_debug.items() if v is not None}})],
     }
 
 
@@ -133,6 +246,28 @@ def extract_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
 def resolve_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Literal["clarify", "ask_amount", "validate_and_secure", "compose"]]:
     ctx = runtime.context
     user_id = state["user_id"]
+
+    followup_item, followup_source = _select_followup_item(state)
+    if followup_item and followup_item.get("recipient_id"):
+        amount = state.get("amount")
+        if not amount and followup_source == "history":
+            amount = followup_item.get("amount")
+        if not amount and followup_source == "recommendations":
+            amount = followup_item.get("suggested_amount")
+
+        updates = {
+            "resolved_recipient_id": followup_item["recipient_id"],
+            "resolved_favorite_id": followup_item.get("favorite_id"),
+            "recipient_alias": followup_item.get("alias") or followup_item.get("name"),
+            "amount": amount,
+            "memo": state.get("memo") or (followup_item.get("memo") if followup_source == "history" else None),
+            "agent_activity": [activity("transfer", "resolved", {
+                "source": f"last_{followup_source}",
+                "name": followup_item.get("name") or followup_item.get("alias"),
+            })],
+        }
+        next_state = {**state, **updates}
+        return Command(goto=_next_after_resolution(next_state), update=updates)
 
     # ── "지난번처럼" ─────────────────────────────────────────────────────────
     if state.get("use_last_transfer"):
@@ -169,6 +304,7 @@ def resolve_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Liter
     alias = state.get("recipient_alias")
     if alias:
         matches = recipient_service.find_by_alias(user_id, alias)
+        matches = _filter_by_bank_hint(matches, state.get("bank_hint"))
 
         if len(matches) == 1:
             m = matches[0]
@@ -374,6 +510,18 @@ def validate_and_secure_node(state: dict, runtime: Runtime[BankingContext]) -> C
             "response_text": "이체 정보가 불완전합니다. 처음부터 다시 말씀해 주세요.",
         })
 
+    source_account_id = state.get("source_account_id")
+    source_account_note = None
+    if not source_account_id and state.get("source_account_hint"):
+        source_account_id, source_account_error = resolve_source_account(user_id, state.get("source_account_hint"))
+        if source_account_error:
+            return Command(goto="compose", update={
+                "response_type": "error",
+                "response_text": source_account_error,
+                "agent_activity": [activity("transfer", "validation_failed", {"errors": [source_account_error]})],
+            })
+        source_account_note = state.get("source_account_hint")
+
     summary = build_transfer_summary(
         ctx, user_id,
         {
@@ -384,6 +532,7 @@ def validate_and_secure_node(state: dict, runtime: Runtime[BankingContext]) -> C
         },
         amount,
         state.get("memo"),
+        source_account_id=source_account_id,
     )
     if not summary:
         return Command(goto="compose", update={
@@ -418,10 +567,14 @@ def validate_and_secure_node(state: dict, runtime: Runtime[BankingContext]) -> C
     return Command(goto="confirm", update={
         "pending_transfer_data": summary_dict,
         "risk_assessment": assessment,
+        "source_account_id": source_account_id,
         "agent_activity": (
             [activity("transfer", "security_consult", {"note": "SecurityAgent 에 리스크 평가 의뢰"})]
             + list(sec_out.get("agent_activity", []))
-            + [activity("transfer", "validated", {"requires_otp": requires_otp})]
+            + [activity("transfer", "validated", {
+                "requires_otp": requires_otp,
+                "source_account_hint": source_account_note,
+            })]
         ),
         "node_logs": list(sec_out.get("node_logs", [])),
         "graph_trace": list(sec_out.get("graph_trace", [])),
@@ -473,6 +626,7 @@ def confirm_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Liter
         "response_type": "confirmation",
         "response_text": text,
         "response_data": {**data, "risk": risk},
+        "debug_info": state.get("debug_info", {}),
     })
     reply = str(reply).strip()
 
@@ -508,6 +662,9 @@ def _handoff_to_supervisor(message: str, note: str) -> Command:
             "memo": None,
             "use_last_transfer": False,
             "recurring_hint": None,
+            "bank_hint": None,
+            "source_account_hint": None,
+            "source_account_id": None,
             "resolved_recipient_id": None,
             "resolved_favorite_id": None,
             "agent_results": [],
@@ -558,6 +715,7 @@ def otp_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Literal["
 
 @traced("transfer", "execute")
 def execute_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Literal["compose"]]:
+    ctx = runtime.context
     user_id = state["user_id"]
     pending = state.get("pending_transfer_data")
 
@@ -568,7 +726,13 @@ def execute_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Liter
         })
 
     summary = TransferSummary(**pending)
-    result = execute_transfer(user_id, summary, favorite_id=state.get("resolved_favorite_id"))
+    execution_request = _execution_request(ctx, state, summary)
+    result = execute_transfer(
+        user_id,
+        summary,
+        favorite_id=state.get("resolved_favorite_id"),
+        execution_request=execution_request,
+    )
 
     if not result.success:
         return Command(goto="compose", update={
@@ -610,6 +774,37 @@ def execute_node(state: dict, runtime: Runtime[BankingContext]) -> Command[Liter
     })
 
 
+def _execution_request(ctx: BankingContext, state: dict, summary: TransferSummary) -> TransferExecutionRequest:
+    """Build a deterministic idempotency key for the confirmed transfer.
+
+    The key is based on the exact data the user confirmed.  If the same resume
+    message is replayed by the browser/network, the adapter can identify it as
+    the same transfer request instead of executing another ledger movement.
+    """
+    raw = "|".join([
+        str(ctx.user_id),
+        state.get("session_id", ctx.session_id),
+        str(summary.source_account_id),
+        summary.recipient_bank,
+        summary.recipient_account,
+        str(summary.amount),
+        str(summary.fee),
+        summary.memo or "",
+    ])
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+    return TransferExecutionRequest(
+        user_id=ctx.user_id,
+        session_id=state.get("session_id", ctx.session_id),
+        idempotency_key=f"transfer:{digest}",
+        source_account_id=summary.source_account_id,
+        recipient_id=state.get("resolved_recipient_id"),
+        amount=summary.amount,
+        fee=summary.fee,
+        memo=summary.memo,
+        confirmation_snapshot=summary.model_dump(),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Node 9 — compose: TransferAgent 결과를 Supervisor 에 전달
 # ─────────────────────────────────────────────────────────────────────────────
@@ -634,6 +829,7 @@ def compose_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
 
 def build_transfer_subgraph():
     g = StateGraph(BankingState)
+    g.add_node("entry", entry_node)
     g.add_node("extract", extract_node)
     g.add_node("resolve", resolve_node)
     g.add_node("clarify", clarify_node)
@@ -644,7 +840,7 @@ def build_transfer_subgraph():
     g.add_node("execute", execute_node)
     g.add_node("compose", compose_node)
 
-    g.add_edge(START, "extract")
+    g.add_edge(START, "entry")
     g.add_edge("extract", "resolve")
     # 이후 라우팅은 각 노드의 Command(goto=…) 가 동적으로 결정
     g.add_edge("compose", END)

@@ -42,9 +42,13 @@ from src.agents.common import llm as llm_helper
 from src.agents.supervisor.planner import make_plan
 from src.agents.supervisor.prompts import apply_tone, build_polish_prompt
 from src.agents.subagents import (
+    build_financial_calculator_subgraph,
     build_inquiry_subgraph,
+    build_menu_search_subgraph,
+    build_product_guide_subgraph,
     build_recommend_subgraph,
     build_security_subgraph,
+    build_tool_calling_subgraph,
     build_transfer_subgraph,
 )
 
@@ -64,6 +68,9 @@ _KIND_TO_RESPONSE_TYPE = {
     "recurring": "message",
     "recipients": "recommendation",
     "security_report": "message",
+    "menu_search": "message",
+    "product_guide": "message",
+    "calculation": "message",
     "success": "success",
     "error": "error",
     "cancelled": "message",
@@ -119,6 +126,10 @@ def route_plan(state: dict) -> Union[str, list]:
             "current_message": state.get("current_message", ""),
             "intent": plan.get("primary_intent", ""),
             "sub_intent": step["sub_intent"],
+            "last_recommendations": state.get("last_recommendations", []),
+            "last_history_items": state.get("last_history_items", []),
+            "last_balance_summary": state.get("last_balance_summary"),
+            "last_followup_source": state.get("last_followup_source", ""),
         }))
     return sends
 
@@ -193,17 +204,35 @@ def build_banking_graph(checkpointer=None):
     g.add_node("inquiry", build_inquiry_subgraph())
     g.add_node("recommend", build_recommend_subgraph())
     g.add_node("security", build_security_subgraph())
+    g.add_node("menu_search", build_menu_search_subgraph())
+    g.add_node("product_guide", build_product_guide_subgraph())
+    g.add_node("financial_calculator", build_financial_calculator_subgraph())
+    g.add_node("tool_agent", build_tool_calling_subgraph())
     g.add_node("respond", respond_node)
 
     g.add_edge(START, "plan")
     g.add_conditional_edges(
         "plan", route_plan,
-        ["transfer", "inquiry", "recommend", "security", "respond"],
+        [
+            "transfer",
+            "inquiry",
+            "recommend",
+            "security",
+            "menu_search",
+            "product_guide",
+            "financial_calculator",
+            "tool_agent",
+            "respond",
+        ],
     )
     g.add_edge("transfer", "respond")
     g.add_edge("inquiry", "respond")
     g.add_edge("recommend", "respond")
     g.add_edge("security", "respond")
+    g.add_edge("menu_search", "respond")
+    g.add_edge("product_guide", "respond")
+    g.add_edge("financial_calculator", "respond")
+    g.add_edge("tool_agent", "respond")
     g.add_edge("respond", END)
 
     return g.compile(checkpointer=checkpointer)
@@ -303,15 +332,18 @@ def run_banking_agent(user_id: int, message: str, session_id: str | None = None)
         result = graph.invoke(graph_input, config=config, context=ctx)
 
     total_ms = max(1, int((time.monotonic() - t_start) * 1000))
+    checkpoint_values = _latest_checkpoint_values(graph, config)
 
     # ── 응답 구성: interrupt payload 또는 최종 상태 ─────────────────────────
     interrupts = result.get("__interrupt__") or []
+    interrupt_debug_info = {}
     if interrupts:
         payload = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
         payload = payload if isinstance(payload, dict) else {"response_text": str(payload)}
         response_type = payload.get("response_type", "message")
         response_text = apply_tone(ctx, payload.get("response_text", ""), response_type)
         response_data = payload.get("response_data")
+        interrupt_debug_info = payload.get("debug_info") or {}
         pending_state = _PENDING_STATE_BY_KIND.get(payload.get("kind", ""), "awaiting_input")
     else:
         response_type = result.get("response_type", "message")
@@ -376,7 +408,7 @@ def run_banking_agent(user_id: int, message: str, session_id: str | None = None)
         "agent_activity": agent_activity,
         "node_logs": node_logs,
         "graph_trace": graph_trace,
-        "debug_info": result.get("debug_info", {}),
+        "debug_info": result.get("debug_info") or interrupt_debug_info or checkpoint_values.get("debug_info", {}),
         "pending_state": pending_state,
         "session_id": session_id,
         "user_profile": {
@@ -389,3 +421,12 @@ def run_banking_agent(user_id: int, message: str, session_id: str | None = None)
         "langsmith_url": langsmith_url,
         "run_log_id": run_log.id,
     }
+
+
+def _latest_checkpoint_values(graph, config: dict) -> dict:
+    try:
+        snapshot = graph.get_state(config)
+        values = getattr(snapshot, "values", None)
+    except Exception:
+        return {}
+    return values if isinstance(values, dict) else {}

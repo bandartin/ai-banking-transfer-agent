@@ -1,0 +1,9 @@
+{
+  "credentials": [
+    {
+      "service_id": 30,
+      "provider_alias": "OpenAI",
+      "service_type_name": "LLM"
+    }
+  ]
+}

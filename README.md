@@ -265,6 +265,43 @@ python scripts/web_smoke.py            # 웹/A2A 레이어 검증
 
 ---
 
+## AWX 이관/패키징 흐름
+
+현재 저장소 루트의 `app.py`, `config.py`, `src/`, `templates/`, `static/`이 정본입니다.
+AWX용 소스를 따로 손으로 복사해 관리하지 않고, `awx/`에는 실행 메타만 둔 뒤
+필요할 때 `dist/awx-flow/` 산출물을 생성합니다.
+
+```bash
+# 정본 소스에서 AWX flow 산출물 생성
+python scripts/build_awx_flow.py --clean
+
+# 테스트까지 포함한 검증용 산출물
+python scripts/build_awx_flow.py --clean --include-tests
+
+# 로컬에서 AWX 실행 스크립트 확인
+cd dist/awx-flow
+bash run-application.sh
+```
+
+AWX 런타임에서는 `awx-bootstrap.json`과 `AWX_CREDENTIAL_*` 설정을 통해
+Portal Credential을 우선 사용합니다. credential 조회가 실패하거나 SDK가 없는 로컬 환경에서는
+기존 `OPENAI_API_KEY` 또는 결정론적 파서 경로로 폴백합니다.
+
+주요 파일:
+
+| 파일 | 설명 |
+|------|------|
+| `awx/run-application.sh` | AWX 표준 실행 진입점. Portal bootstrap 후 `opentelemetry-instrument`로 앱 실행 |
+| `awx/awx-bootstrap.json` | Credential/external resource 사전 준비 manifest |
+| `awx/pyproject.toml` | AWX flow 실행 의존성 |
+| `scripts/build_awx_flow.py` | 정본 소스를 `dist/awx-flow/`로 조립하는 빌드 스크립트 |
+| `src/awx_runtime/` | AWX credential, LLMLog, OTel, redaction optional 어댑터 |
+
+실제 AWX workspace 업로드, `awx run`, `awx package`, 배포 후 검증 절차는
+`docs/AWX_플랫폼_배포_실행_가이드.md`를 참고하세요.
+
+---
+
 ## 페이지 설명
 
 | 페이지 | URL | 설명 |

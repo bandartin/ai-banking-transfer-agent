@@ -18,8 +18,10 @@ State 와 Context 의 분리가 LangGraph 1.x Runtime 의 핵심입니다.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
+
+from src.awx_runtime.credentials import resolve_openai_credential
 
 
 @dataclass
@@ -38,6 +40,21 @@ class BankingContext:
     llm_provider: str = "deterministic"  # "openai" | "deterministic"
     openai_model: str = "gpt-4o-mini"
     openai_api_key: str = ""
+    llm_credential_source: str = ""      # "awx" | "env" | ""
+    llm_credential_id: str = ""
+    awx_credential_service_id: str = ""
+    awx_provider_alias: str = "OpenAI"
+    awx_service_type_name: str = "LLM"
+
+    # -- OpenAI tool calling (Phase 1: read-only tools) ---------------------
+    tool_calling_enabled: bool = True
+    tool_calling_transfer_prep_enabled: bool = False
+    tool_calling_awx_mcp_enabled: bool = False
+    tool_calling_awx_mcp_allowlist: str = ""
+    openai_tool_model: str = ""
+    tool_calling_max_steps: int = 4
+    awx_mcp_server_name: str = ""
+    awx_mcp_service_id: str = ""
 
     # ── 비즈니스 정책 (코드 상수 대신 컨텍스트로 주입) ───────────────────────
     interbank_fee: int = 500
@@ -68,7 +85,8 @@ def build_context(app_config: dict, user, session_id: str) -> BankingContext:
     노드들은 절대 current_app 을 읽지 않고 runtime.context 만 사용합니다.
     """
     provider = app_config.get("LLM_PROVIDER", "deterministic")
-    api_key = app_config.get("OPENAI_API_KEY", "")
+    credential = resolve_openai_credential(app_config) if provider == "openai" else None
+    api_key = credential.api_key if credential else ""
     if provider == "openai" and not api_key:
         provider = "deterministic"  # 키 없으면 자동 폴백
 
@@ -82,8 +100,29 @@ def build_context(app_config: dict, user, session_id: str) -> BankingContext:
         llm_provider=provider,
         openai_model=app_config.get("OPENAI_MODEL", "gpt-4o-mini"),
         openai_api_key=api_key,
+        llm_credential_source=credential.source if credential else "",
+        llm_credential_id=credential.credential_id if credential else "",
+        awx_credential_service_id=app_config.get("AWX_CREDENTIAL_SERVICE_ID", ""),
+        awx_provider_alias=app_config.get("AWX_CREDENTIAL_PROVIDER_ALIAS", "OpenAI"),
+        awx_service_type_name=app_config.get("AWX_CREDENTIAL_SERVICE_TYPE_NAME", "LLM"),
+        tool_calling_enabled=_as_bool(app_config.get("TOOL_CALLING_ENABLED", True)),
+        tool_calling_transfer_prep_enabled=_as_bool(app_config.get("TOOL_CALLING_TRANSFER_PREP_ENABLED", False)),
+        tool_calling_awx_mcp_enabled=_as_bool(app_config.get("TOOL_CALLING_AWX_MCP_ENABLED", False)),
+        tool_calling_awx_mcp_allowlist=app_config.get("TOOL_CALLING_AWX_MCP_ALLOWLIST", ""),
+        openai_tool_model=app_config.get("OPENAI_TOOL_MODEL", "") or app_config.get("OPENAI_MODEL", "gpt-4o-mini"),
+        tool_calling_max_steps=int(app_config.get("TOOL_CALLING_MAX_STEPS", 4)),
+        awx_mcp_server_name=app_config.get("AWX_MCP_SERVER_NAME", "") or app_config.get("MCP_SERVER_NAME", ""),
+        awx_mcp_service_id=app_config.get("AWX_MCP_SERVICE_ID", "") or app_config.get("MCP_SERVICE_ID", ""),
         interbank_fee=app_config.get("INTERBANK_FEE", 500),
         otp_threshold=app_config.get("OTP_THRESHOLD", 3_000_000),
         demo_otp_code=app_config.get("DEMO_OTP_CODE", "123456"),
         source_bank_name=app_config.get("SOURCE_BANK_NAME", "으뜸은행"),
     )
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)

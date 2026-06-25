@@ -63,12 +63,14 @@ def build_planner_prompt(ctx: BankingContext, agent_cards: str) -> str:
 
 [계획 규칙]
 1. 이체 요청이 포함되면 steps 는 transfer 하나만 넣으세요 (이체 플로우가 보안 검증을 자체 협업으로 수행합니다).
-2. 조회성 요청(잔액/내역/자동이체/추천/보안점검)이 여러 개면 parallel=true 로 동시에 실행하세요.
-3. 어떤 에이전트에도 해당하지 않으면 steps 를 비우고 primary_intent="unknown" 으로 두세요.
-4. 각 step 의 reason 에 선택 이유를 한국어 한 문장으로 쓰세요 (사용자에게 표시됩니다).
+2. 조회성 요청(잔액/내역/자동이체/추천/보안점검/메뉴검색/상품안내)이 여러 개면 parallel=true 로 동시에 실행하세요.
+3. 금융 계산 요청은 financial_calculator 로 보내세요. 계산 숫자는 코드가 산출하고, LLM은 표현만 다듬습니다.
+4. 고객 잔액, 한도, 계좌상태, 인증결과, 이체실행 여부를 RAG/지식검색으로 판단하지 마세요.
+5. 어떤 에이전트에도 해당하지 않으면 steps 를 비우고 primary_intent="unknown" 으로 두세요.
+6. 각 step 의 reason 에 선택 이유를 한국어 한 문장으로 쓰세요 (사용자에게 표시됩니다).
 """
     if ctx.risk_profile == "high":
-        prompt += "\n5. 이 고객은 보안 강화 대상입니다. 조회 계획에도 security(report) 단계를 추가하는 것을 고려하세요.\n"
+        prompt += "\n7. 이 고객은 보안 강화 대상입니다. 조회 계획에도 security(report) 단계를 추가하는 것을 고려하세요.\n"
     return prompt
 
 
@@ -77,22 +79,65 @@ def build_planner_prompt(ctx: BankingContext, agent_cards: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_slot_prompt(ctx: BankingContext, known_aliases: list[str]) -> str:
+def build_slot_prompt(ctx: BankingContext, known_aliases: list[str], followup_memory: dict | None = None) -> str:
     alias_hint = ", ".join(known_aliases[:20]) if known_aliases else "(없음)"
+    memory_block = _slot_memory_block(followup_memory or {})
     return f"""한국 개인뱅킹 이체 도우미입니다. 사용자 발화에서 이체 슬롯을 추출하세요.
 
 [고객 정보] {_customer_block(ctx)}
 [고객이 쓰는 수신자 호칭 예시] {alias_hint}
+{memory_block}
 
 추출 항목:
+- raw_amount_text: 원문 금액 표현. 없으면 null
+- recipient_text: 원문 수신자 표현. 없으면 null
 - recipient_alias: 수신자 이름/별칭/호칭 (엄마, 여친, 민수 등. 없으면 null)
 - amount: 이체 금액 정수(KRW). "5만원"→50000 (없으면 null)
 - memo: 이체 메모. "밥값이라고 적어줘" → "밥값" (없으면 null)
 - use_last_transfer: "지난번처럼/저번처럼" 패턴이면 true
 - recurring_hint: 월세/관리비/용돈/적금 등 반복이체 키워드 (없으면 null)
+- bank_hint: 수신 은행 힌트. "한빛은행 엄마한테" → "한빛은행" (없으면 null)
+- source_account_hint: 출금 계좌 힌트. "월급통장에서" → "월급통장" (없으면 null)
+- confidence: 0.0~1.0 사이 신뢰도
+- ambiguous_fields: 애매하거나 추정이 필요한 필드명 목록
+- missing_fields: 이체 진행에 필요한데 누락된 필드명 목록
+- evidence: 각 슬롯의 근거가 된 원문 조각
 
 호칭("여친", "우리 큰딸")도 recipient_alias 로 추출하세요. 호칭 해석은 코드가 합니다.
+없는 정보는 추정하지 말고 null 또는 missing_fields/ambiguous_fields 로 표시하세요.
+금액은 반드시 KRW 정수로 출력하세요.
 """
+
+
+def _slot_memory_block(memory: dict) -> str:
+    lines = []
+
+    recs = memory.get("last_recommendations") or []
+    if recs:
+        lines.append("[직전 추천 결과]")
+        for r in recs[:5]:
+            label = r.get("alias") or r.get("name")
+            amount = f", 추천금액 {r.get('suggested_amount'):,}원" if r.get("suggested_amount") else ""
+            lines.append(f"{r.get('rank')}. {label} ({r.get('name')}, {r.get('bank_name')}{amount})")
+
+    history = memory.get("last_history_items") or []
+    if history:
+        lines.append("[직전 이체내역]")
+        for i, h in enumerate(history[:5], start=1):
+            label = h.get("alias") or h.get("name")
+            lines.append(f"{i}. {label} ({h.get('name')}, {h.get('bank_name')}) {h.get('amount'):,}원")
+
+    balance = memory.get("last_balance_summary") or {}
+    if balance:
+        lines.append("[직전 잔액/한도]")
+        lines.append(
+            f"남은 일일 한도 {balance.get('daily_remaining', 0):,}원, "
+            f"1회 한도 {balance.get('single_transfer_limit', 0):,}원"
+        )
+
+    if not lines:
+        return ""
+    return "\n" + "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

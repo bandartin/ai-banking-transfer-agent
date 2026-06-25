@@ -1,0 +1,71 @@
+{
+  "schema_version": "tool_calling_masked_trace_sample.v1",
+  "trace_content_policy": "TRACELOOP_TRACE_CONTENT=false",
+  "spans": [
+    {
+      "name": "banking.graph.node",
+      "attributes": {
+        "agent": "tool_agent",
+        "mode": "langchain_tool_calling",
+        "prompt": "<not recorded>",
+        "response": "<not recorded>"
+      }
+    },
+    {
+      "name": "banking.route.decision",
+      "attributes": {
+        "from": "supervisor",
+        "to": "tool_agent",
+        "reason": "read_only_tool_calling_enabled"
+      }
+    },
+    {
+      "name": "banking.tool.call",
+      "attributes": {
+        "tool_name": "prepare_transfer_summary",
+        "side_effect": "prepare",
+        "status": "completed",
+        "execution_allowed": false
+      },
+      "audit_event": {
+        "tool_name": "prepare_transfer_summary",
+        "side_effect": "prepare",
+        "status": "completed",
+        "arguments": {
+          "source_account_id": "***",
+          "recipient_id": "***",
+          "amount": 50000
+        },
+        "result": {
+          "kind": "transfer_preparation",
+          "source_agent": "tool_agent",
+          "data": {
+            "ready_for_confirmation": true,
+            "summary": {
+              "source_account_number": "****-1234",
+              "recipient_account": "****-4000",
+              "amount": 50000,
+              "fee": 500
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "banking.hitl.confirmation",
+      "attributes": {
+        "agent": "transfer",
+        "resume_required": true,
+        "transfer_executed": false
+      }
+    },
+    {
+      "name": "banking.hitl.resume",
+      "attributes": {
+        "agent": "transfer",
+        "resume_type": "confirmation",
+        "otp_required": true
+      }
+    }
+  ]
+}

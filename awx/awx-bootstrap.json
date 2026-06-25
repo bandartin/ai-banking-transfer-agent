@@ -1,0 +1,18 @@
+{
+  "credentials": [
+    {
+      "service_id": 30,
+      "provider_alias": "OpenAI",
+      "service_type_name": "LLM"
+    }
+  ],
+  "external_resources": [
+    {
+      "provider_alias": "OpenAI",
+      "solution_id": "BUILDER",
+      "service_type_name": "LLM"
+    }
+  ],
+  "prompts": [],
+  "prefetch_mcp": false
+}

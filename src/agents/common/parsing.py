@@ -72,6 +72,29 @@ def parse_amount(text: str) -> Optional[int]:
     return None
 
 
+def extract_amount_text(text: str) -> Optional[str]:
+    """Return the raw amount expression that parse_amount would likely use."""
+    compact = text.replace(" ", "")
+    patterns = [
+        r"\d+억\d+천만",
+        r"\d+억\d+천",
+        r"\d+(?:\.\d+)?억",
+        r"\d+(?:\.\d+)?천만",
+        r"\d+(?:\.\d+)?백만",
+        r"\d+만\d+천원?",
+        r"\d+(?:\.\d+)?만원?",
+        r"\d+(?:\.\d+)?천원?",
+        r"\d{1,3}(?:,\d{3})+원?",
+        r"\d+원",
+        r"[일이삼사오육칠팔구십백천만억]+원",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, compact)
+        if m:
+            return m.group(0)
+    return None
+
+
 _KOR_DIGITS = {"일": 1, "이": 2, "삼": 3, "사": 4, "오": 5, "육": 6, "칠": 7, "팔": 8, "구": 9}
 _KOR_SMALL_UNITS = {"십": 10, "백": 100, "천": 1_000}
 _KOR_BIG_UNITS = {"만": 10_000, "억": 100_000_000}
@@ -124,6 +147,18 @@ _INTENT_RULES_ORDERED = [
     ("security_inquiry", [
         r"안전.*이체", r"이체.*안전", r"보안.*점검", r"사기.*의심",
         r"보이스피싱", r"이상.*거래",
+    ]),
+    ("menu_search", [
+        r"메뉴", r"어디(?:서|에)", r"화면", r"경로", r"찾아", r"찾을\s*수",
+        r"위치", r"어떻게\s*들어",
+    ]),
+    ("financial_calculator", [
+        r"계산", r"이자", r"금리.*얼마", r"원리금", r"상환", r"만기.*금액",
+        r"예상.*금액",
+    ]),
+    ("product_guide", [
+        r"상품", r"예금", r"적금", r"대출", r"수수료", r"면제", r"우대금리",
+        r"안내", r"FAQ|faq",
     ]),
     # transfer is checked last to avoid matching "보내" inside recommendation phrases
     ("transfer", [
@@ -211,18 +246,28 @@ _EXCLUDED_ALIASES = {
     "그냥", "빨리", "지금", "바로", "이체", "송금", "계좌",
 }
 
+_BANK_HINT_PATTERN = r"([가-힣A-Za-z0-9]+(?:은행|뱅크))"
+_SOURCE_ACCOUNT_PATTERNS = [
+    r"([가-힣A-Za-z0-9]+(?:통장|계좌|적금))에서",
+    r"([가-힣A-Za-z0-9]+(?:통장|계좌|적금))으로",
+    r"출금\s*계좌\s*([가-힣A-Za-z0-9]+)",
+]
+
 
 def extract_slots(text: str) -> ExtractedSlots:
     """Deterministic slot extraction from Korean text."""
     amount = parse_amount(text)
+    raw_amount_text = extract_amount_text(text)
 
     alias = None
+    recipient_text = None
     for pattern in _RECIPIENT_PATTERNS:
         m = re.search(pattern, text + " ")  # trailing space for lookahead
         if m:
             candidate = m.group(1).strip()
             if candidate not in _EXCLUDED_ALIASES:
                 alias = candidate
+                recipient_text = candidate
                 break
 
     if not alias:
@@ -231,6 +276,7 @@ def extract_slots(text: str) -> ExtractedSlots:
             candidate = m.group(1).strip()
             if candidate not in _EXCLUDED_ALIASES:
                 alias = candidate
+                recipient_text = candidate
 
     memo = None
     m = re.search(r"메모\s*[:\s]\s*([^\s]+)", text)
@@ -244,6 +290,18 @@ def extract_slots(text: str) -> ExtractedSlots:
 
     use_last = any(re.search(p, text) for p in _LAST_TRANSFER_PATTERNS)
 
+    bank_hint = None
+    m = re.search(_BANK_HINT_PATTERN, text)
+    if m:
+        bank_hint = m.group(1)
+
+    source_account_hint = None
+    for pattern in _SOURCE_ACCOUNT_PATTERNS:
+        m = re.search(pattern, text)
+        if m:
+            source_account_hint = m.group(1).strip()
+            break
+
     recurring_hint = None
     for key, kws in _RECURRING_KEYWORDS.items():
         for kw in kws:
@@ -253,10 +311,36 @@ def extract_slots(text: str) -> ExtractedSlots:
         if recurring_hint:
             break
 
+    missing_fields = []
+    if classify_intent(text) == "transfer":
+        if not alias and not use_last and not recurring_hint:
+            missing_fields.append("recipient_alias")
+        if amount is None:
+            missing_fields.append("amount")
+
+    evidence = {}
+    if raw_amount_text:
+        evidence["amount"] = raw_amount_text
+    if recipient_text:
+        evidence["recipient_alias"] = recipient_text
+    if memo:
+        evidence["memo"] = memo
+    if bank_hint:
+        evidence["bank_hint"] = bank_hint
+    if source_account_hint:
+        evidence["source_account_hint"] = source_account_hint
+
     return ExtractedSlots(
+        raw_amount_text=raw_amount_text,
+        recipient_text=recipient_text,
         recipient_alias=alias,
         amount=amount,
         memo=memo,
         use_last_transfer=use_last,
         recurring_hint=recurring_hint,
+        bank_hint=bank_hint,
+        source_account_hint=source_account_hint,
+        missing_fields=missing_fields,
+        evidence=evidence,
+        extraction_method="rule",
     )

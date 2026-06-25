@@ -220,6 +220,12 @@ function updateDebugPanel(result) {
   if (slots.memo)            rows += `<div class="debug-row"><span class="debug-label">메모</span><span class="debug-value">${escapeHtml(slots.memo)}</span></div>`;
   if (slots.use_last_transfer) rows += `<div class="debug-row"><span class="debug-label">지난번처럼</span><span class="debug-value text-info">✓</span></div>`;
   if (slots.recurring_hint)  rows += `<div class="debug-row"><span class="debug-label">반복 힌트</span><span class="debug-value">${escapeHtml(slots.recurring_hint)}</span></div>`;
+  if (slots.bank_hint)       rows += `<div class="debug-row"><span class="debug-label">은행 힌트</span><span class="debug-value">${escapeHtml(slots.bank_hint)}</span></div>`;
+  if (slots.source_account_hint) rows += `<div class="debug-row"><span class="debug-label">출금계좌 힌트</span><span class="debug-value">${escapeHtml(slots.source_account_hint)}</span></div>`;
+  if (slots.extraction_method) rows += `<div class="debug-row"><span class="debug-label">Slot 방식</span><span class="debug-value">${escapeHtml(slots.extraction_method)}</span></div>`;
+  if (slots.ambiguous_fields && slots.ambiguous_fields.length) {
+    rows += `<div class="text-warning small mt-1">확인 필요: ${slots.ambiguous_fields.map(escapeHtml).join(", ")}</div>`;
+  }
 
   if (validation) {
     const icon = validation.passed ? "✅" : "❌";

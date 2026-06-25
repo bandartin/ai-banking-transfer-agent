@@ -87,7 +87,10 @@ def invoke_agent(agent_key: str):
 
     # Sub-Agent 단독 호출 (stateless)
     from src.agents.subagents import (
+        build_financial_calculator_subgraph,
         build_inquiry_subgraph,
+        build_menu_search_subgraph,
+        build_product_guide_subgraph,
         build_recommend_subgraph,
         build_security_subgraph,
     )
@@ -95,6 +98,9 @@ def invoke_agent(agent_key: str):
         "inquiry": build_inquiry_subgraph,
         "recommend": build_recommend_subgraph,
         "security": build_security_subgraph,
+        "menu_search": build_menu_search_subgraph,
+        "product_guide": build_product_guide_subgraph,
+        "financial_calculator": build_financial_calculator_subgraph,
     }
     if agent_key == "transfer":
         return _rpc_error(

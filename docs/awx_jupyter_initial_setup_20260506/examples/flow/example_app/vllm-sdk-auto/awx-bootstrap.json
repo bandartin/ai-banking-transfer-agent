@@ -1,0 +1,16 @@
+{
+  "credentials": [
+    {
+      "service_id": 30,
+      "provider_alias": "Custom",
+      "service_type_name": "LLM"
+    }
+  ],
+  "external_resources": [
+    {
+      "provider_alias": "Custom",
+      "solution_id": "BUILDER",
+      "service_type_name": "LLM"
+    }
+  ]
+}

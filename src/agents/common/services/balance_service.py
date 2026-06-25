@@ -1,46 +1,40 @@
-"""Balance and transfer limit queries."""
+"""Balance and transfer limit queries.
+
+The public functions in this module are kept for compatibility with the
+existing agents and tests.  Internally they now delegate to the integration
+adapter so the same agent code can run against the current mock DB or a future
+IBK account/limit API.
+"""
 
 from __future__ import annotations
 
 from datetime import date
 from typing import List, Optional
 
-from src.models.database import db, Account, TransferLimit, User
+from src.integrations import get_banking_adapter
+from src.models.database import db, Account, TransferLimit
 
 
 def get_primary_account(user_id: int) -> Optional[Account]:
     """Return the primary checking account for *user_id*."""
-    return (
-        db.session.query(Account)
-        .filter(
-            Account.user_id == user_id,
-            Account.is_primary == True,
-            Account.is_active == True,
-        )
-        .first()
-    )
+    return get_banking_adapter().get_primary_account(user_id)
 
 
 def get_all_accounts(user_id: int) -> List[Account]:
-    return (
-        db.session.query(Account)
-        .filter(Account.user_id == user_id, Account.is_active == True)
-        .all()
-    )
+    return get_banking_adapter().get_all_accounts(user_id)
+
+
+def find_account_by_hint(user_id: int, hint: str) -> Optional[Account]:
+    """Find an active source account by account name/type/number fragment."""
+    return get_banking_adapter().find_account_by_hint(user_id, hint)
 
 
 def get_transfer_limit(user_id: int) -> Optional[TransferLimit]:
-    tl = (
-        db.session.query(TransferLimit)
-        .filter(TransferLimit.user_id == user_id)
-        .first()
-    )
-    if tl:
-        _maybe_reset_daily(tl)
-    return tl
+    return get_banking_adapter().get_transfer_limit(user_id)
 
 
 def _maybe_reset_daily(tl: TransferLimit) -> None:
+    """Compatibility helper for code/tests that still import this symbol."""
     today = date.today()
     if tl.last_reset_date != today:
         tl.daily_used = 0
@@ -51,30 +45,4 @@ def _maybe_reset_daily(tl: TransferLimit) -> None:
 
 def get_balance_summary(user_id: int) -> dict:
     """Return a dict suitable for the balance display and agent response."""
-    accounts = get_all_accounts(user_id)
-    tl = get_transfer_limit(user_id)
-
-    account_list = [
-        {
-            "id": a.id,
-            "name": a.account_name,
-            "number": a.account_number,
-            "bank": a.bank_name,
-            "type": a.account_type,
-            "balance": a.balance,
-            "is_primary": a.is_primary,
-        }
-        for a in accounts
-    ]
-
-    daily_limit = tl.daily_limit if tl else 0
-    daily_used = tl.daily_used if tl else 0
-    single_limit = tl.single_transfer_limit if tl else 0
-
-    return {
-        "accounts": account_list,
-        "daily_limit": daily_limit,
-        "daily_used": daily_used,
-        "daily_remaining": max(0, daily_limit - daily_used),
-        "single_transfer_limit": single_limit,
-    }
+    return get_banking_adapter().get_balance_summary(user_id)

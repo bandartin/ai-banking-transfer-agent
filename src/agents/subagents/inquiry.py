@@ -32,8 +32,24 @@ def inquiry_node(state: dict, runtime: Runtime[BankingContext]) -> dict:
 
     return {
         "agent_results": [{"agent": "inquiry", "kind": sub, **result}],
+        **_followup_memory(sub, result),
         "agent_activity": [activity("inquiry", f"{sub}_done")],
     }
+
+
+def _followup_memory(sub: str, result: dict) -> dict:
+    data = result.get("data") or {}
+    if sub == "history":
+        return {
+            "last_history_items": data.get("history", []),
+            "last_followup_source": "history",
+        }
+    if sub == "balance":
+        return {
+            "last_balance_summary": data,
+            "last_followup_source": "balance",
+        }
+    return {}
 
 
 def _balance(user_id: int) -> dict:
@@ -71,9 +87,13 @@ def _history(user_id: int) -> dict:
         lines.append(f"• {date_str} | {alias} ({rec.bank_name}) | {r.amount:,}원{memo_str}")
         history_list.append({
             "id": r.id,
+            "favorite_id": r.favorite_id,
+            "recipient_id": rec.id,
             "alias": alias,
             "name": rec.name,
             "bank": rec.bank_name,
+            "bank_name": rec.bank_name,
+            "account_number": rec.account_number,
             "amount": r.amount,
             "fee": r.fee,
             "memo": r.memo,

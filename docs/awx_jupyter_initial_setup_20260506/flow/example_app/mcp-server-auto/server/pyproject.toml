@@ -1,0 +1,20 @@
+[project]
+name = "mcp-server-auto-server"
+version = "0.1.0"
+description = "Minimal MCP server example with OpenTelemetry auto instrumentation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "fastmcp>=3.0.0b1",
+    "python-dotenv",
+    "opentelemetry-distro[otlp]",
+    "opentelemetry-exporter-otlp",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-mcp",
+]
+
+[tool.uv]
+package = false
+default-groups = []

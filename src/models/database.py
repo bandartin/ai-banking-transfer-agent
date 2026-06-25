@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -218,6 +219,76 @@ class TransferHistory(db.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Transfer request lifecycle for real-bank execution
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TransferRequest(db.Model):
+    """
+    Durable request row for a transfer workflow.
+
+    The demo can still execute directly against SQLite, but a real bank
+    integration needs a request lifecycle that survives retries and browser
+    refreshes.  This row stores the immutable confirmation snapshot and an
+    idempotency key so a duplicated "확인" click cannot become a duplicated
+    transfer.
+    """
+
+    __tablename__ = "transfer_requests"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_transfer_requests_idempotency_key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    session_id = Column(String(100), nullable=True)
+    idempotency_key = Column(String(160), nullable=False)
+    status = Column(String(30), default="draft")  # draft / confirmed / executing / executed / failed
+    execution_mode = Column(String(20), default="mock")  # mock / dry_run / live
+
+    source_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    recipient_id = Column(Integer, ForeignKey("recipients.id"), nullable=True)
+    favorite_id = Column(Integer, ForeignKey("favorites.id"), nullable=True)
+    transfer_history_id = Column(Integer, ForeignKey("transfer_history.id"), nullable=True)
+
+    amount = Column(BigInteger, nullable=False, default=0)
+    fee = Column(BigInteger, default=0)
+    total_deducted = Column(BigInteger, default=0)
+    confirmation_snapshot_json = Column(Text)
+
+    external_reference_id = Column(String(160))
+    last_error_code = Column(String(80))
+    last_error_message = Column(Text)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    confirmed_at = Column(DateTime)
+    authenticated_at = Column(DateTime)
+    executed_at = Column(DateTime)
+
+    def __repr__(self) -> str:
+        return f"<TransferRequest id={self.id} status={self.status} amount={self.amount}>"
+
+
+class TransferEvent(db.Model):
+    """Append-only transfer lifecycle event for audit and troubleshooting."""
+
+    __tablename__ = "transfer_events"
+
+    id = Column(Integer, primary_key=True)
+    transfer_request_id = Column(Integer, ForeignKey("transfer_requests.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    event_type = Column(String(60), nullable=False)
+    payload_json = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    request = relationship("TransferRequest")
+
+    def __repr__(self) -> str:
+        return f"<TransferEvent request={self.transfer_request_id} type={self.event_type}>"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Limits
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -316,6 +387,57 @@ class AuditLog(db.Model):
         return f"<AuditLog action={self.action} entity={self.entity_type}/{self.entity_id}>"
 
 
+class ExternalCallLog(db.Model):
+    """
+    Redacted metadata for calls to IBK/AWX/third-party systems.
+
+    Request and response bodies should be masked before storage.  The purpose of
+    this table is latency, status, correlation, and error analysis, not raw
+    customer-data retention.
+    """
+
+    __tablename__ = "external_call_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    session_id = Column(String(100), nullable=True)
+    system_name = Column(String(80), nullable=False)
+    operation = Column(String(120), nullable=False)
+    request_id = Column(String(160))
+    status = Column(String(40))
+    status_code = Column(String(40))
+    latency_ms = Column(Integer)
+    request_json = Column(Text)
+    response_json = Column(Text)
+    error_code = Column(String(80))
+    error_message = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<ExternalCallLog {self.system_name}.{self.operation} status={self.status}>"
+
+
+class RagRetrievalLog(db.Model):
+    """RAG retrieval trace with document/chunk metadata and no customer secrets."""
+
+    __tablename__ = "rag_retrieval_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    session_id = Column(String(100), nullable=True)
+    agent_name = Column(String(80), nullable=False)
+    query_text = Column(Text, nullable=False)
+    collection = Column(String(120), nullable=False)
+    top_score = Column(String(40))
+    threshold_met = Column(Boolean, default=True)
+    chunks_json = Column(Text)
+    source = Column(String(80))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<RagRetrievalLog agent={self.agent_name} collection={self.collection}>"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent Run Log
 # ─────────────────────────────────────────────────────────────────────────────
@@ -371,6 +493,10 @@ def _schema_outdated() -> bool:
 
     insp = inspect(db.engine)
     if "alias_memories" not in insp.get_table_names():
+        return True
+    if "transfer_requests" not in insp.get_table_names():
+        return True
+    if "rag_retrieval_logs" not in insp.get_table_names():
         return True
     user_cols = {c["name"] for c in insp.get_columns("users")}
     if "birth_year" not in user_cols:

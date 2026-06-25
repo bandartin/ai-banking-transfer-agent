@@ -1,0 +1,11 @@
+{
+  "credentials": [
+    {
+      "service_id": 30,
+      "provider_alias": "OpenAI",
+      "service_type_name": "LLM"
+    }
+  ],
+  "prefetch_mcp": true,
+  "mcp_env_fallback": true
+}

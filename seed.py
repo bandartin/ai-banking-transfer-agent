@@ -46,11 +46,27 @@ def run(app=None):
             RecurringTransfer,
             TransferHistory,
             TransferLimit,
+            TransferRequest,
+            TransferEvent,
+            ExternalCallLog,
+            RagRetrievalLog,
         )
 
         # ── Clear existing data (keep schema) ─────────────────────────────────
-        for model in (AliasMemory, TransferHistory, RecurringTransfer, Favorite,
-                      TransferLimit, Account, Recipient, User):
+        for model in (
+            RagRetrievalLog,
+            ExternalCallLog,
+            TransferEvent,
+            TransferRequest,
+            AliasMemory,
+            TransferHistory,
+            RecurringTransfer,
+            Favorite,
+            TransferLimit,
+            Account,
+            Recipient,
+            User,
+        ):
             db.session.query(model).delete()
         db.session.commit()
 

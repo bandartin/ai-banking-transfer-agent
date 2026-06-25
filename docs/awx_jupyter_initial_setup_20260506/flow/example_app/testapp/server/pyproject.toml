@@ -1,0 +1,13 @@
+[project]
+name = "testapp-server"
+version = "0.1.0"
+description = "Minimal FastAPI startup example"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
+
+[tool.uv]
+package = false
+default-groups = []

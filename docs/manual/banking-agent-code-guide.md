@@ -1,6 +1,6 @@
 # AI Banking Transfer Agent 코드 워크플로우 상세 가이드
 
-> 목적: 이 문서는 `ai-banking-transfer-agent` 프로젝트를 처음 보는 사람도 코드를 따라가며 전체 흐름을 이해할 수 있도록 만든 프린트용 매뉴얼입니다.
+> 작성: LG CNS 이병민(bmlee@lgcns.com)
 
 ## 목차
 
@@ -19,8 +19,6 @@
 13. [데이터 저장과 감사 로그](#13-데이터-저장과-감사-로그)
 14. [프론트엔드 렌더링과 디버그 패널](#14-프론트엔드-렌더링과-디버그-패널)
 15. [실제 예시별 코드 흐름](#15-실제-예시별-코드-흐름)
-16. [처음 보는 사람이 읽는 순서](#16-처음-보는-사람이-읽는-순서)
-17. [출력과 참고 방법](#17-출력과-참고-방법)
 
 ---
 
@@ -1571,63 +1569,6 @@ confirm_node
 
 이 부분이 계층형 멀티 에이전트 구조를 잘 보여주는 예입니다.
 
----
-
-## 16. 처음 보는 사람이 읽는 순서
-
-처음 코드를 보는 사람에게는 아래 순서를 권장합니다.
-
-1. `app.py`
-   - 앱이 어떻게 시작되는지 확인합니다.
-
-2. `src/web/routes/chat.py`
-   - 사용자 메시지가 어디로 들어오는지 봅니다.
-
-3. `src/agents/supervisor/graph.py`
-   - `run_banking_agent()`와 Supervisor 그래프를 봅니다.
-
-4. `src/agents/state.py`, `src/agents/context.py`
-   - State와 Context의 차이를 이해합니다.
-
-5. `src/agents/supervisor/planner.py`
-   - 질문이 계획으로 바뀌는 방식을 봅니다.
-
-6. `src/agents/subagents/inquiry.py`
-   - 가장 단순한 Sub-Agent부터 봅니다.
-
-7. `src/agents/subagents/transfer.py`
-   - 멀티턴, 확인, OTP, 핸드오프를 봅니다.
-
-8. `src/agents/subagents/security.py`
-   - TransferAgent와 SecurityAgent 협업을 봅니다.
-
-9. `src/web/routes/a2a.py`, `src/agents/a2a/cards.py`
-   - A2A Agent Card와 외부 invoke 표면을 봅니다.
-
-10. `static/js/chat.js`
-    - 응답 타입이 화면에 어떻게 렌더링되는지 봅니다.
-
----
-
-## 17. 출력과 참고 방법
-
-GitHub에서 이 문서를 열고 브라우저 인쇄 기능을 사용하면 됩니다.
-
-권장 방식:
-
-1. GitHub에서 `docs/manual/banking-agent-code-guide.md` 열기
-2. 브라우저 `Ctrl + P`
-3. 배율을 90~100%로 조정
-4. 배경 그래픽 출력 옵션을 켜면 코드블럭과 표가 더 잘 보입니다.
-5. PDF로 저장하거나 바로 출력합니다.
-
-더 좋은 방법:
-
-- VS Code에서 Markdown Preview를 열고 인쇄하면 로컬 폰트가 적용되어 가독성이 좋습니다.
-- 문서를 자주 갱신할 예정이면 `docs/manual/README.md`를 목차로 유지하고, 세부 문서를 장별로 나누는 방식이 좋습니다.
-- 향후 GitHub Pages를 켜면 이 문서를 웹 매뉴얼처럼 볼 수 있습니다.
-
----
 
 ## 요약
 

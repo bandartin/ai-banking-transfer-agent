@@ -1,0 +1,29 @@
+[project]
+name = "langchain-agent-sdk-auto-agent"
+version = "0.1.0"
+description = "AWX SDK MCP discovery + LangChain tool-calling agent example"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "python-dotenv",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "openai",
+    "requests",
+    "google-re2>=1.1.20251105",
+    "opentelemetry-distro[otlp]",
+    "opentelemetry-exporter-otlp",
+    "opentelemetry-instrumentation-fastapi",
+    "opentelemetry-instrumentation-mcp",
+    "opentelemetry-instrumentation-langchain",
+    "opentelemetry-instrumentation-logging",
+    "opentelemetry-instrumentation-openai",
+    "opentelemetry-instrumentation-requests",
+]
+
+[tool.uv]
+package = false
+default-groups = []

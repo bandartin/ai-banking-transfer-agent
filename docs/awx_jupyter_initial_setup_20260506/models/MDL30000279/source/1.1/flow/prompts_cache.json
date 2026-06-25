@@ -1,0 +1,10 @@
+{
+    "0": {
+        "id": 30,
+        "name": "\uc0bc\ud589\uc2dc\ud504\ub86c\ud504\ud2b8",
+        "variables": [],
+        "examples": [],
+        "meta_prompt": "\uc7ac\ubbf8\uc788\uac8c \uc0bc\ud589\uc2dc \ud574\uc8fc\uc138\uc694",
+        "user_prompt": "\uc548\ub155\ud558\uc138\uc694\n"
+    }
+}

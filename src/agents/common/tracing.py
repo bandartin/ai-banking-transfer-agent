@@ -12,6 +12,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Command
 
 from src.agents.context import BankingContext
+from src.awx_runtime.observability import node_span
 
 
 def traced(agent: str, node: str) -> Callable:
@@ -20,7 +21,8 @@ def traced(agent: str, node: str) -> Callable:
     def deco(fn: Callable) -> Callable:
         def wrapped(state: dict, runtime: Runtime[BankingContext]):
             t0 = time.monotonic()
-            result = fn(state, runtime)
+            with node_span(agent, node, state):
+                result = fn(state, runtime)
             duration_ms = max(1, int((time.monotonic() - t0) * 1000))
 
             log_entry = {"agent": agent, "node": node, "duration_ms": duration_ms}

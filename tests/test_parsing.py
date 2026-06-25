@@ -10,6 +10,8 @@ from src.agents.common.parsing import (
     is_confirmation,
     parse_amount,
 )
+from src.agents.common.llm import _cross_check_slots
+from src.agents.common.schemas import ExtractedSlots
 
 
 class TestAmountParser:
@@ -79,3 +81,34 @@ class TestSlots:
     def test_recurring(self):
         s = extract_slots("월세 보내야 하지?")
         assert s.recurring_hint == "월세"
+
+    def test_extended_slot_metadata(self):
+        s = extract_slots("비상금통장에서 한빛은행 엄마에게 5만원 보내고 밥값이라고 적어줘")
+        assert s.raw_amount_text == "5만원"
+        assert s.recipient_alias == "엄마"
+        assert s.recipient_text == "엄마"
+        assert s.bank_hint == "한빛은행"
+        assert s.source_account_hint == "비상금통장"
+        assert s.memo == "밥값"
+        assert s.extraction_method == "rule"
+        assert s.missing_fields == []
+        assert s.evidence["amount"] == "5만원"
+
+    def test_missing_fields(self):
+        s = extract_slots("엄마한테 보내줘")
+        assert "amount" in s.missing_fields
+
+    def test_llm_rule_cross_check_prefers_rule_amount(self):
+        llm_slots = ExtractedSlots(recipient_alias="엄마", amount=500_000, extraction_method="llm")
+        rule_slots = ExtractedSlots(
+            recipient_alias="엄마",
+            amount=50_000,
+            raw_amount_text="5만원",
+            evidence={"amount": "5만원"},
+            extraction_method="rule",
+        )
+        merged = _cross_check_slots(llm_slots, rule_slots)
+        assert merged.amount == 50_000
+        assert "amount" in merged.ambiguous_fields
+        assert merged.evidence["amount_conflict"] == "llm=500000, rule=50000"
+        assert merged.extraction_method == "llm+rule_cross_check"

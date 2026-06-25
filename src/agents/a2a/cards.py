@@ -60,6 +60,51 @@ AGENT_CARDS: dict[str, dict] = {
             {"id": "report", "name": "보안 리포트", "description": "최근 7일 이체 패턴 기반 계좌 보안 점검", "tags": ["read-only"], "examples": ["내 계좌 안전한지 점검해줘"]},
         ],
     },
+    "menu_search": {
+        "name": "MenuSearchAgent",
+        "description": "앱/업무 메뉴 위치를 AWX 지식저장소 또는 로컬 지식 catalog에서 검색한다. 고객 잔액·한도 같은 실시간 값은 조회하지 않는다.",
+        "version": "1.0.0",
+        "capabilities": {"streaming": False},
+        "skills": [
+            {
+                "id": "menu",
+                "name": "메뉴 검색",
+                "description": "메뉴명, 업무명, 사용자가 하려는 일을 바탕으로 화면 경로를 찾음",
+                "tags": ["rag", "read-only", "menu"],
+                "examples": ["이체한도 변경 메뉴 어디 있어?", "OTP 재발급은 어디서 해?"],
+            },
+        ],
+    },
+    "product_guide": {
+        "name": "ProductGuideAgent",
+        "description": "상품, 수수료, FAQ, 이용안내를 RAG 기반으로 설명하고 근거 문서 metadata를 반환한다.",
+        "version": "1.0.0",
+        "capabilities": {"streaming": False},
+        "skills": [
+            {
+                "id": "guide",
+                "name": "상품/수수료 안내",
+                "description": "상품/수수료/FAQ/규정 문서 기반 설명",
+                "tags": ["rag", "read-only", "product", "fee"],
+                "examples": ["타행 이체 수수료 알려줘", "정기예금은 어떤 상품이야?"],
+            },
+        ],
+    },
+    "financial_calculator": {
+        "name": "FinancialCalculatorAgent",
+        "description": "예금 이자와 대출 원리금 상환액을 결정론적 코드로 계산한다. 설명은 지식검색과 결합 가능하나 계산값은 LLM이 만들지 않는다.",
+        "version": "1.0.0",
+        "capabilities": {"streaming": False},
+        "skills": [
+            {
+                "id": "calculate",
+                "name": "금융 계산",
+                "description": "예금이자, 만기금액, 대출 원리금균등 상환액 계산",
+                "tags": ["calculator", "deterministic", "read-only"],
+                "examples": ["1,000만원을 연 3.5%로 12개월 예금하면 이자 얼마야?", "1억원을 연 4%로 30년 상환하면 월 얼마야?"],
+            },
+        ],
+    },
 }
 
 
